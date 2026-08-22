@@ -29,7 +29,10 @@ if (!isValidSemver(version)) {
 }
 
 function read(relativePath) {
-  return readFileSync(resolve(root, relativePath), "utf8");
+  return readFileSync(resolve(root, relativePath), "utf8").replace(
+    /\r\n?/g,
+    "\n",
+  );
 }
 
 function write(relativePath, contents) {
@@ -83,7 +86,7 @@ function checkVersions() {
 
   const lockfile = read("src-tauri/Cargo.lock");
   const lockVersion = lockfile.match(
-    /\[\[package\]\]\nname = "gganbu-app-bridge"\nversion = "([^"]+)"/,
+    /\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = "([^"]+)"/,
   )?.[1];
   if (lockVersion !== sourceVersion) {
     mismatches.push(["src-tauri/Cargo.lock", lockVersion]);
@@ -126,7 +129,7 @@ if (process.argv[2] === undefined) {
   );
   replaceExactly(
     "src-tauri/Cargo.lock",
-    /(\[\[package\]\]\nname = "gganbu-app-bridge"\nversion = ")[^"]+/,
+    /(\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = ")[^"]+/,
     `$1${version}`,
   );
   write(

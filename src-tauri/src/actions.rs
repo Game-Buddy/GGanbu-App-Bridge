@@ -334,6 +334,7 @@ fn action_label(action: &str) -> String {
         .strip_prefix("ID_")
         .unwrap_or(action)
         .split('_')
+        .filter(|word| !word.is_empty())
         .map(|word| {
             if matches!(
                 word,

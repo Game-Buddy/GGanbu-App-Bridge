@@ -23,6 +23,13 @@ describe("OPAQUE browser feasibility", () => {
       clientRegistrationState: registrationStart.clientRegistrationState,
       registrationResponse,
       password,
+      keyStretching: {
+        "argon2id-custom": {
+          memory: 19 * 1024,
+          iterations: 2,
+          parallelism: 1,
+        },
+      },
     });
     const loginStart = opaque.client.startLogin({ password });
     const { loginResponse, serverLoginState } = opaque.server.startLogin({
@@ -35,6 +42,13 @@ describe("OPAQUE browser feasibility", () => {
       clientLoginState: loginStart.clientLoginState,
       loginResponse,
       password,
+      keyStretching: {
+        "argon2id-custom": {
+          memory: 19 * 1024,
+          iterations: 2,
+          parallelism: 1,
+        },
+      },
     });
     expect(login).not.toBeFalsy();
     expect(login?.sessionKey).toEqual(

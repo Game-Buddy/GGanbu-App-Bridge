@@ -15,6 +15,8 @@ pub struct Suite;
 impl CipherSuite for Suite {
     type OprfCs = Ristretto255;
     type KeyExchange = TripleDh<Ristretto255, Sha512>;
+    // Must match game-buddy-frontend's explicit 19 MiB / 2-pass / 1-lane
+    // Argon2id profile in BRIDGE_KEY_STRETCHING.
     type Ksf = opaque_ke::argon2::Argon2<'static>;
 }
 

@@ -10,9 +10,9 @@ const separatorIndex = args.indexOf("--");
 if (separatorIndex >= 0) {
   args.splice(separatorIndex, 1);
 }
-const result = spawnSync("tauri", args, {
+const command = process.platform === "win32" ? "tauri.cmd" : "tauri";
+const result = spawnSync(command, args, {
   stdio: "inherit",
-  shell: process.platform === "win32",
 });
 
 if (result.error) {

@@ -57,7 +57,7 @@ struct KeybindingRow {
 
 fn parse_blk_value(raw: &str) -> serde_json::Value {
     let value = raw.trim();
-    if value.starts_with('"') && value.ends_with('"') {
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
         return serde_json::Value::String(value[1..value.len() - 1].replace("\\\"", "\""));
     }
     value
@@ -250,6 +250,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(fs::canonicalize(resolved).unwrap(), expected);
+    }
+
+    #[test]
+    fn parses_a_single_quote_without_panicking() {
+        assert_eq!(
+            parse_blk_value("\""),
+            serde_json::Value::String("\"".into())
+        );
     }
 }
 

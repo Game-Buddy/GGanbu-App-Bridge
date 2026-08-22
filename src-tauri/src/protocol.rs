@@ -540,8 +540,17 @@ pub async fn pairing_register_start(
         .map_err(|_| pairing_authentication_failed(&state))?;
     if request.device_id.is_empty()
         || request.device_id.len() > 128
+        || !is_valid_request_id(&request.device_id)
         || request.display_name.trim().is_empty()
         || request.display_name.chars().count() > 80
+    {
+        return Err(pairing_authentication_failed(&state));
+    }
+    if state
+        .security
+        .devices()
+        .iter()
+        .any(|device| device.device_id == request.device_id)
     {
         return Err(pairing_authentication_failed(&state));
     }

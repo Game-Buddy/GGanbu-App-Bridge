@@ -150,6 +150,10 @@ impl DeviceStore {
             path: temp.clone(),
             source,
         })?;
+        file.sync_all().map_err(|source| StorageError::Io {
+            path: temp.clone(),
+            source,
+        })?;
         fs::rename(&temp, &self.path).map_err(|source| StorageError::Io {
             path: self.path.clone(),
             source,

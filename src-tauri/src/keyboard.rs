@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Game Buddy
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{fmt, sync::Arc, thread, time::Duration};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
@@ -18,6 +23,7 @@ pub trait KeyboardExecutor: Send + Sync {
 #[derive(Clone)]
 pub struct KeyboardExecution {
     executor: Arc<dyn KeyboardExecutor>,
+    execution_lock: Arc<Mutex<()>>,
 }
 
 impl fmt::Debug for KeyboardExecution {
@@ -32,20 +38,29 @@ impl KeyboardExecution {
     pub fn system() -> Self {
         Self {
             executor: system_executor(),
+            execution_lock: Arc::new(Mutex::new(())),
         }
     }
 
     pub fn disabled() -> Self {
         Self {
             executor: Arc::new(DisabledExecutor),
+            execution_lock: Arc::new(Mutex::new(())),
         }
     }
 
     pub fn with_executor(executor: Arc<dyn KeyboardExecutor>) -> Self {
-        Self { executor }
+        Self {
+            executor,
+            execution_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     pub fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+        let _guard = self
+            .execution_lock
+            .lock()
+            .expect("keyboard execution lock poisoned");
         self.executor.execute(key_codes)
     }
 }

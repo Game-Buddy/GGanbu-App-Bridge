@@ -50,6 +50,10 @@ impl PairingRateLimiter {
         const MAX_ATTEMPTS: usize = 30;
         let now = Instant::now();
         let mut attempts = self.attempts.lock().expect("rate limiter lock poisoned");
+        attempts.retain(|_, entries| {
+            entries.retain(|started| now.duration_since(*started) < WINDOW);
+            !entries.is_empty()
+        });
         let entries = attempts.entry(ip).or_default();
         entries.retain(|started| now.duration_since(*started) < WINDOW);
         if entries.len() >= MAX_ATTEMPTS {
@@ -150,7 +154,10 @@ async fn enforce_pairing_rate_limit(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if request.method() == Method::POST && request.uri().path().starts_with("/v1/pairing/") {
+    if request.method() == Method::POST
+        && (request.uri().path().starts_with("/v1/pairing/")
+            || request.uri().path().starts_with("/v1/session/"))
+    {
         let ip = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()

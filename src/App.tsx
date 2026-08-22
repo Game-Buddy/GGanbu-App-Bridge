@@ -521,10 +521,18 @@ export default function App() {
                     className="add-device-button"
                     disabled={mappingBusy}
                     onClick={async () => {
-                      const path = await invoke<string | null>(
-                        "pick_keybindings_file",
-                      );
-                      if (path) void loadMappings(path);
+                      try {
+                        const path = await invoke<string | null>(
+                          "pick_keybindings_file",
+                        );
+                        if (path) void loadMappings(path);
+                      } catch (error) {
+                        setMappingError(
+                          error instanceof Error
+                            ? error.message
+                            : String(error),
+                        );
+                      }
                     }}
                   >
                     {mappingBusy ? "Loading…" : "Upload your Controls"}
@@ -712,9 +720,19 @@ export default function App() {
                       <button
                         type="button"
                         className="disconnect-button"
-                        onClick={() =>
-                          void invoke("remove_device", { deviceId: device.id })
-                        }
+                        onClick={async () => {
+                          try {
+                            await invoke("remove_device", {
+                              deviceId: device.id,
+                            });
+                          } catch (error) {
+                            setPairingError(
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                            );
+                          }
+                        }}
                       >
                         Remove
                       </button>

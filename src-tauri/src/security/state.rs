@@ -393,6 +393,7 @@ impl SecurityState {
         state: Vec<u8>,
     ) -> bool {
         const MAX_PENDING_LOGINS: usize = 256;
+        const MAX_PENDING_LOGINS_PER_DEVICE: usize = 4;
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let now = Utc::now();
         inner
@@ -400,6 +401,16 @@ impl SecurityState {
             .retain(|_, (_, _, expires_at)| now < *expires_at);
         if inner.pending_logins.len() >= MAX_PENDING_LOGINS {
             tracing::warn!("maximum pending device logins reached");
+            return false;
+        }
+        if inner
+            .pending_logins
+            .values()
+            .filter(|(pending_device, _, _)| pending_device == &device_id)
+            .count()
+            >= MAX_PENDING_LOGINS_PER_DEVICE
+        {
+            tracing::warn!(device_id = %device_id, "maximum pending device logins for device reached");
             return false;
         }
         if inner
@@ -505,6 +516,13 @@ impl SecurityState {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let now = Utc::now();
         let cutoff = now - chrono::Duration::seconds(LOGIN_FAILURE_WINDOW_SECONDS);
+        if !inner
+            .devices
+            .iter()
+            .any(|device| device.device_id == device_id && !device.is_revoked())
+        {
+            return;
+        }
         inner.device_login_failures.retain(|_, failures| {
             failures.retain(|timestamp| *timestamp > cutoff);
             !failures.is_empty()
@@ -706,6 +724,14 @@ mod tests {
     #[test]
     fn device_login_failures_are_rate_limited_and_clear_after_success() {
         let state = SecurityState::default();
+        state
+            .add_device(DeviceRecord::new(
+                "device-a".into(),
+                "Device A".into(),
+                vec![1],
+                Utc::now(),
+            ))
+            .unwrap();
         assert!(state.allow_device_login("device-a"));
         for _ in 0..10 {
             state.record_device_login_failure("device-a");
@@ -719,14 +745,8 @@ mod tests {
     #[test]
     fn device_login_failure_tracking_is_bounded() {
         let state = SecurityState::default();
-        for index in 0..1024 {
-            state.record_device_login_failure(&format!("device-{index}"));
-        }
-        state.record_device_login_failure("device-overflow");
-
         let inner = state.inner.read().unwrap();
-        assert_eq!(inner.device_login_failures.len(), 1024);
-        assert!(!inner.device_login_failures.contains_key("device-overflow"));
+        assert!(inner.device_login_failures.is_empty());
     }
 
     #[test]

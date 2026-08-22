@@ -41,7 +41,6 @@
     ],
     "resources": [
       "assets/config/hotkeys/*",
-      "../.env",
       "../LICENSE",
       "../THIRD_PARTY_NOTICES.md"
     ]

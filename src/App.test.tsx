@@ -118,10 +118,14 @@ describe("GGanbu Bridge status screen", () => {
         expect.arrayContaining([["start_server"], ["start_pairing"]]),
       );
     });
-    expect(tauri.invoke.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
-      tauri.invoke.mock.invocationCallOrder[
-        tauri.invoke.mock.calls.findIndex(([name]) => name === "start_server")
-      ],
+    const startIndex = tauri.invoke.mock.calls.findIndex(
+      ([name]) => name === "start_server",
+    );
+    const pairIndex = tauri.invoke.mock.calls.findIndex(
+      ([name]) => name === "start_pairing",
+    );
+    expect(tauri.invoke.mock.invocationCallOrder[pairIndex]).toBeGreaterThan(
+      tauri.invoke.mock.invocationCallOrder[startIndex],
     );
   });
 
