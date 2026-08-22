@@ -1,0 +1,439 @@
+name: Checks and desktop builds
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  repository:
+    name: Repository policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate public repository files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_files=(
+            README.md
+            LICENSE
+            CONTRIBUTING.md
+            SECURITY.md
+            CODE_OF_CONDUCT.md
+            CHANGELOG.md
+            REUSE.toml
+            THIRD_PARTY_NOTICES.md
+            TRADEMARKS.md
+            .github/ISSUE_TEMPLATE/bug_report.yml
+            .github/ISSUE_TEMPLATE/feature_request.yml
+            .github/pull_request_template.md
+          )
+          for required_file in "${required_files[@]}"; do
+            test -s "$required_file" || {
+              echo "Required repository file is missing or empty: $required_file" >&2
+              exit 1
+            }
+          done
+
+          if git grep -nE '^(<{7}|={7}|>{7})( .*)?$' -- . ':(exclude)CHANGELOG.md'; then
+            echo "Merge-conflict markers found" >&2
+            exit 1
+          fi
+
+          forbidden_files="$(git ls-files '*.key' '*.pem' '*.p12' '*.pfx')"
+          test -z "$forbidden_files" || {
+            echo "Private key or certificate files must not be committed:" >&2
+            echo "$forbidden_files" >&2
+            exit 1
+          }
+
+  detect-application:
+    name: Detect application source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.detect.outputs.available }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Detect complete application manifests
+        id: detect
+        shell: bash
+        run: |
+          if test -f package.json && test -f pnpm-lock.yaml && test -f src-tauri/Cargo.toml; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Application checks remain disabled until package.json, pnpm-lock.yaml, and src-tauri/Cargo.toml are present."
+          fi
+
+  check-application:
+    name: Ubuntu 24.04 application
+    needs: detect-application
+    if: needs.detect-application.outputs.available == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Audit Rust dependencies
+        run: cargo deny --manifest-path src-tauri/Cargo.toml --config src-tauri/deny.toml --all-features check advisories licenses
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run all checks
+        run: |
+          pnpm license:check
+          pnpm format:check
+          pnpm lint
+          pnpm test
+          pnpm build
+          pnpm check:rust
+
+      - name: Build desktop application without bundling
+        run: pnpm tauri build --no-bundle
+
+  build-windows:
+    name: Windows x86_64 application
+    needs: detect-application
+    if: >-
+      needs.detect-application.outputs.available == 'true' &&
+      (github.event_name == 'pull_request' ||
+      (github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'))
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop application
+        run: pnpm tauri build --no-bundle
+
+  build-linux-qa:
+    name: Linux x86_64 QA package
+    needs: detect-application
+    if: >-
+      needs.detect-application.outputs.available == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read QA build metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build AppImage
+        run: pnpm tauri build --bundles appimage
+
+      - name: Create QA checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' -print -quit)"
+          test -n "$appimage"
+          (cd "$(dirname "$appimage")" && sha256sum "$(basename "$appimage")" > SHA256SUMS)
+
+      - name: Upload Linux QA package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qa-linux-x86_64-${{ steps.metadata.outputs.version }}-${{ steps.metadata.outputs.short_sha }}
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows-qa:
+    name: Windows x86_64 QA package
+    needs: detect-application
+    if: >-
+      needs.detect-application.outputs.available == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read QA build metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "short_sha=$($env:GITHUB_SHA.Substring(0, 7))" >> $env:GITHUB_OUTPUT
+
+      - name: Build NSIS installer
+        run: pnpm tauri build --bundles nsis
+
+      - name: Create QA checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -File -Filter *.exe | Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Tauri did not produce an NSIS installer"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content (Join-Path $installer.DirectoryName "SHA256SUMS")
+
+      - name: Upload Windows QA package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qa-windows-x86_64-${{ steps.metadata.outputs.version }}-${{ steps.metadata.outputs.short_sha }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        # TODO: Tauri 2.11.5 currently depends on gtk 0.18, which requires glib ^0.18.
+        # glib 0.20 fixes this advisory, but cannot be selected without upgrading
+        # the entire Tauri GTK/WebKit stack.
+        with:
+          allow-ghsas: GHSA-wrw7-89jp-8q8g
+          # OpenSSF scores are informational; warn only for exceptionally low scores.
+          warn-on-openssf-scorecard-level: 1
+
+  required-ci:
+    name: required-ci
+    needs:
+      [
+        repository,
+        detect-application,
+        check-application,
+        build-windows,
+        dependency-review,
+        build-linux-qa,
+        build-windows-qa,
+      ]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate required job results
+        shell: bash
+        env:
+          RESULTS: >-
+            ${{ needs.repository.result }}
+            ${{ needs.detect-application.result }}
+            ${{ needs.check-application.result }}
+            ${{ needs.build-windows.result }}
+            ${{ needs.dependency-review.result }}
+            ${{ needs.build-linux-qa.result }}
+            ${{ needs.build-windows-qa.result }}
+        run: |
+          set -euo pipefail
+          for result in $RESULTS; do
+            case "$result" in
+              failure|cancelled)
+                echo "A required CI job ended with $result" >&2
+                exit 1
+                ;;
+              success|skipped)
+                ;;
+              *)
+                echo "Unexpected CI job result: $result" >&2
+                exit 1
+                ;;
+            esac
+          done

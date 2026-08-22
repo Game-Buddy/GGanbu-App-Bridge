@@ -1,0 +1,13 @@
+War Thunder compatibility data
+
+This file records provenance and does not grant a license to copy, modify, or
+redistribute the accompanying data. The data is third-party game content used
+for compatibility with War Thunder configuration files. Rights remain with
+the applicable rights holders.
+
+Source credit:
+https://github.com/gszabi99/War-Thunder-Datamine
+
+Game Buddy is an unofficial tool and is not affiliated with or endorsed by
+Gaijin Entertainment. Users must follow the applicable Gaijin Terms of
+Service: https://legal.gaijin.net/en/termsofservice

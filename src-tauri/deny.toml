@@ -1,0 +1,42 @@
+# Dependency advisory policy for the bridge's Rust graph.
+#
+# Keep transitive unmaintained-crate notices visible in reports without
+# blocking builds. Direct dependencies remain errors, as do vulnerabilities,
+# unsoundness, and yanked crates.
+
+[licenses]
+allow = [
+  "0BSD",
+  "AGPL-3.0-only",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[advisories]
+unmaintained = "workspace"
+unsound = "all"
+yanked = "deny"
+unused-ignored-advisory = "deny"
+
+# Exception owner: GameBuddy bridge maintainers.
+# RUSTSEC-2024-0429 affects glib::VariantStrIter. glib 0.18.5 is pulled in
+# through the Tauri -> Wry -> GTK3 stack; this project does not call
+# VariantStrIter or expose glib APIs. Recheck the dependency chain by
+# 2026-11-30 and remove this exception when a supported patched chain is
+# available.
+ignore = [
+  { id = "RUSTSEC-2024-0429", reason = "Transitive Tauri GTK3 dependency; project code does not use VariantStrIter. Review by 2026-11-30." },
+]

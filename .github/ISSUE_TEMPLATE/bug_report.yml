@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible problem in GGanbu App Bridge
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include secrets, pairing credentials, private keys, or vulnerability details. Report vulnerabilities through the process in `SECURITY.md`.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for this problem.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I am using an official build from this repository.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release version or commit SHA
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Ubuntu 24.04 X11
+        - Ubuntu 24.04 Wayland
+        - Other Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: architecture
+    attributes:
+      label: Architecture
+      placeholder: x86_64
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the bridge...
+        2. Open...
+        3. Select...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove usernames, tokens, credentials, device identifiers, and other private data.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots or other details that help reproduce the issue.

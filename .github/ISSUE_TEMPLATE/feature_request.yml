@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused improvement to GGanbu App Bridge
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: For early ideas and support questions, start with a Discussion. Use this form for a concrete, actionable proposal.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for this request.
+          required: true
+        - label: This request is specifically about GGanbu App Bridge.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem or limitation should be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior without relying only on implementation details.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative designs have you considered?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, platform constraints, or related links.
