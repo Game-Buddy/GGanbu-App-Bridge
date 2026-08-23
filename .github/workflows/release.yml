@@ -108,6 +108,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          main_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$GITHUB_SHA" = "$main_commit" || {
+            echo "main advanced during release approval; refusing to tag an older commit" >&2
+            exit 1
+          }
+
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Tag $RELEASE_TAG already exists."
             exit 0
