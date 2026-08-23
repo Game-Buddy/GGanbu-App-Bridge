@@ -15,9 +15,10 @@ Thanks for helping improve GGanbu App Bridge. The repository is currently being 
 2. Keep the branch focused on one change.
 3. Open the pull request against `main` and complete the pull-request template.
 4. Merge the pull request into `main` after the required checks pass.
-5. The merged `main` commit starts the release workflow when its version has
-   not already been released. The protected release environment controls
-   approval, tag creation, signing, and publication.
+5. After the merged `main` commit passes `Checks and desktop builds` and
+   `CodeQL`, the release workflow starts when its version has not already been
+   released. The protected release environment controls approval, signing, tag
+   creation, and publication.
 
 Direct pushes to `main` are not part of the normal workflow.
 

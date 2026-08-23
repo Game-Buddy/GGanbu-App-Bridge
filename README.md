@@ -42,7 +42,7 @@ The Tauri source layout, trust boundaries, and request flow are documented in
 - `main` is the default branch and the stable release branch.
 - Feature and fix branches are short-lived and branch from `main`.
 - Feature pull requests target `main`, must pass the required checks, and must update the synchronized application version and `CHANGELOG.md`.
-- A push to `main` checks the version in the merged commit. If that version has no GitHub Release, the approved workflow creates its protected semantic version tag, builds the desktop packages, and publishes the signed release.
+- After `Checks and desktop builds` and `CodeQL` succeed for `main`, the approved workflow checks the version in that tested commit. If that version has no GitHub Release, it builds and signs the desktop packages, then creates its protected semantic version tag and publishes the signed release.
 
 Pushes to `main` also produce QA packages. Stable installers come only from signed GitHub Releases created by the approved release workflow.
 

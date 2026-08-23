@@ -1,18 +1,56 @@
 name: Signed desktop release
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Checks and desktop builds", "CodeQL"]
+    types: [completed]
     branches: [main]
 
 permissions: {}
+
+env:
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  workflow-gate:
+    name: Verify all CI workflows
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+    steps:
+      - name: Confirm successful workflows for the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workflow in "Checks and desktop builds" "CodeQL"; do
+            conclusion="$(gh run list \
+              --workflow "$workflow" \
+              --commit "$RELEASE_SHA" \
+              --event push \
+              --status completed \
+              --limit 20 \
+              --json conclusion \
+              --jq '.[0].conclusion // empty')"
+            if [[ "$conclusion" != "success" ]]; then
+              echo "$workflow has not succeeded for $RELEASE_SHA" >&2
+              exit 1
+            fi
+          done
+
   preflight:
     name: Release preflight
+    needs: workflow-gate
+    if: needs.workflow-gate.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -21,10 +59,11 @@ jobs:
       should_release: ${{ steps.release.outputs.should_release }}
       release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
-      - name: Check out main and history
+      - name: Check out the tested main commit and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Install pnpm 11.18.0
@@ -56,8 +95,8 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin main
           main_commit="$(git rev-parse refs/remotes/origin/main)"
-          test "$GITHUB_SHA" = "$main_commit" || {
-            echo "main advanced after this workflow was queued; refusing to release an older commit" >&2
+          test "$RELEASE_SHA" = "$main_commit" || {
+            echo "main advanced after checks completed; refusing to release an older commit" >&2
             exit 1
           }
 
@@ -81,8 +120,8 @@ jobs:
           if git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; then
             git fetch --no-tags origin "refs/tags/$release_tag:refs/tags/$release_tag"
             tag_commit="$(git rev-list -n 1 "$release_tag^{commit}")"
-            test "$tag_commit" = "$GITHUB_SHA" || {
-              echo "Existing tag $release_tag does not point at the current main commit" >&2
+            test "$tag_commit" = "$RELEASE_SHA" || {
+              echo "Existing tag $release_tag does not point at the checked commit" >&2
               exit 1
             }
             echo "Using existing tag $release_tag for this retry."
@@ -91,47 +130,9 @@ jobs:
           fi
           echo "should_release=true" >> "$GITHUB_OUTPUT"
 
-  create-release-tag:
-    name: Create release tag
-    needs: preflight
-    if: needs.preflight.outputs.should_release == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment: release
-    permissions:
-      contents: write
-    steps:
-      - name: Create tag for the approved main commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          main_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          test "$GITHUB_SHA" = "$main_commit" || {
-            echo "main advanced during release approval; refusing to tag an older commit" >&2
-            exit 1
-          }
-
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG already exists."
-            exit 0
-          fi
-
-          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
-            -f "tag=$RELEASE_TAG" \
-            -f "message=Release $RELEASE_TAG" \
-            -f "object=$GITHUB_SHA" \
-            -f "type=commit" \
-            --jq .sha)"
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f "ref=refs/tags/$RELEASE_TAG" \
-            -f "sha=$tag_sha" >/dev/null
-
   build-linux:
     name: Linux AppImage
-    needs: [preflight, create-release-tag]
+    needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -143,6 +144,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Install Tauri system dependencies
@@ -235,6 +237,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Download unsigned Linux files
@@ -302,7 +305,7 @@ jobs:
 
   build-windows:
     name: Windows NSIS installer
-    needs: [preflight, create-release-tag]
+    needs: preflight
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -314,6 +317,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Install pnpm 11.18.0
@@ -394,6 +398,7 @@ jobs:
           $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
           Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Directory |
+            Where-Object { $null -ne ($_.Name -as [version]) } |
             Sort-Object { [version]$_.Name } -Descending |
             ForEach-Object { Get-ChildItem $_.FullName -Filter signtool.exe -Recurse } |
             Select-Object -First 1
@@ -430,9 +435,47 @@ jobs:
           path: release
           if-no-files-found: error
 
+  create-release-tag:
+    name: Create release tag
+    needs: [preflight, sign-linux, sign-windows]
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag after signed artifacts succeed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$RELEASE_SHA" = "$main_commit" || {
+            echo "main advanced during release approval; refusing to tag an older commit" >&2
+            exit 1
+          }
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists."
+            exit 0
+          fi
+
+          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f "tag=$RELEASE_TAG" \
+            -f "message=Release $RELEASE_TAG" \
+            -f "object=$RELEASE_SHA" \
+            -f "type=commit" \
+            --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" \
+            -f "sha=$tag_sha" >/dev/null
+
   publish:
     name: Publish signed release
-    needs: [preflight, sign-linux, sign-windows]
+    needs: [preflight, sign-linux, sign-windows, create-release-tag]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
@@ -445,6 +488,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Download Linux release files

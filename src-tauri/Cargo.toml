@@ -1,6 +1,6 @@
 [package]
 name = "gganbu-app-bridge"
-version = "0.4.6"
+version = "0.4.7"
 description = "Secure local companion bridge for GGanbu.app"
 authors = ["GGanbu Dev"]
 license = "AGPL-3.0-only"
