@@ -1,6 +1,6 @@
 name: Signed desktop release
 
-on:
+on: # zizmor: ignore[dangerous-triggers] Only successful push runs for trusted main commits are accepted below.
   workflow_run:
     workflows: ["CodeQL"]
     types: [completed]
@@ -421,11 +421,21 @@ jobs:
           $pfxPath = Join-Path $env:RUNNER_TEMP "gganbu-app-bridge-signing.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
           $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-          Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
+          $certificate = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+            Where-Object { $_.HasPrivateKey } |
+            Select-Object -First 1
+          if ($null -eq $certificate) {
+            throw "The Windows signing certificate does not contain a private key"
+          }
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Directory |
             Where-Object { $null -ne ($_.Name -as [version]) } |
             Sort-Object { [version]$_.Name } -Descending |
-            ForEach-Object { Get-ChildItem $_.FullName -Filter signtool.exe -Recurse } |
+            ForEach-Object {
+              $x64Signtool = Join-Path $_.FullName "x64\signtool.exe"
+              if (Test-Path -LiteralPath $x64Signtool) {
+                Get-Item -LiteralPath $x64Signtool
+              }
+            } |
             Select-Object -First 1
           if ($null -eq $signtool) {
             throw "signtool.exe was not found"
@@ -436,9 +446,14 @@ jobs:
           }
           foreach ($installer in $installers) {
             Copy-Item $installer.FullName $releaseDirectory
-            & $signtool.FullName sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 (Join-Path $releaseDirectory $installer.Name)
+            $releaseInstaller = Join-Path $releaseDirectory $installer.Name
+            & $signtool.FullName sign /sha1 $certificate.Thumbprint /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $releaseInstaller
             if ($LASTEXITCODE -ne 0) {
               throw "signtool failed for $($installer.Name)"
+            }
+            & $signtool.FullName verify /pa /v $releaseInstaller
+            if ($LASTEXITCODE -ne 0) {
+              throw "signature verification failed for $($installer.Name)"
             }
           }
           $hashLines = foreach ($file in (Get-ChildItem $releaseDirectory -File)) {
