@@ -1,0 +1,25 @@
+version: 2
+
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: weekly
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
+
+  - package-ecosystem: npm
+    directory: /
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies

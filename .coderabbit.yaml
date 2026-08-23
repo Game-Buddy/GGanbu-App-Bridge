@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# SPDX-FileCopyrightText: 2026 Game Buddy
+# SPDX-License-Identifier: AGPL-3.0-only
+
+language: en-US
+early_access: false
+
+tone_instructions: >-
+  Be concise and direct. Report concrete defects with their impact and a practical
+  fix. Avoid style-only comments already covered by the repository's checks.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_title_keywords:
+      - WIP
+
+  path_filters:
+    # Review application code, security policy, release automation, and project docs.
+    - ".coderabbit.yaml"
+    - ".github/CODEOWNERS"
+    - ".github/dependabot.yml"
+    - ".github/workflows/**"
+    - "CHANGELOG.md"
+    - "CONTRIBUTING.md"
+    - "README.md"
+    - "SECURITY.md"
+    - "docs/security/**"
+    - "docs/repository-governance.md"
+    - "docs/preset-provenance.md"
+    - "eslint.config.js"
+    - "index.html"
+    - "package.json"
+    - "rust-toolchain.toml"
+    - "scripts/**"
+    - "src/**"
+    - "src-tauri/Cargo.toml"
+    - "src-tauri/action-mappings.json"
+    - "src-tauri/build.rs"
+    - "src-tauri/capabilities/**"
+    - "src-tauri/deny.toml"
+    - "src-tauri/src/**"
+    - "src-tauri/tauri.conf.json"
+    - "tsconfig.json"
+    - "vite.config.ts"
+
+    # Do not send secrets, generated output, dependency locks, or bundled data to review.
+    - "!.env"
+    - "!dist/**"
+    - "!src/assets/**"
+    - "!src-tauri/assets/**"
+    - "!src-tauri/Cargo.lock"
+    - "!src-tauri/gen/**"
+    - "!src-tauri/icons/**"
+    - "!src-tauri/target/**"
+    - "!src/version.ts"
+    - "!pnpm-lock.yaml"
+    - "!THIRD_PARTY_NOTICES.md"
+
+  path_instructions:
+    - path: "src-tauri/src/**/*.rs"
+      instructions: |
+        Review this as a security-sensitive local service.
+        - Check authentication, session ownership, origin enforcement, request limits, and validation before state changes.
+        - Flag secrets or sensitive payloads written to logs or returned in errors.
+        - Check shared state for races, unbounded growth, lock misuse, and cleanup gaps.
+        - Check Linux and Windows behavior separately when code is platform-specific.
+        - Require focused tests for protocol, security, and state-management changes.
+
+    - path: "src/**/*.{ts,tsx}"
+      instructions: |
+        - Check bridge protocol compatibility, stale asynchronous state, effect cleanup, and error handling.
+        - Check visible UI changes for keyboard access, useful status text, overflow, and narrow-window behavior.
+        - Require tests for behavior changes. Do not request tests for generated version constants.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        - Check least-privilege permissions, immutable action pins, secret handling, and unsafe use of pull-request input.
+        - Preserve the main-only workflow: feature branch to main, then an immutable version tag on the merged main commit.
+        - Treat Linux and Windows build, signing, provenance, and publishing jobs as separate trust boundaries.
+
+    - path: "scripts/**"
+      instructions: |
+        - Check scripts for partial writes, platform-specific line endings, unsafe command construction, and actionable failures.
+        - VERSION is the application version source of truth. Version changes must stay synchronized through pnpm version:set and include CHANGELOG.md.
+
+chat:
+  auto_reply: true

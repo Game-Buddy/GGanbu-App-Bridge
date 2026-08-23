@@ -1,0 +1,11 @@
+dist/
+coverage/
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/Cargo.lock
+pnpm-lock.yaml
+LICENSE
+LICENSES/
+THIRD_PARTY_NOTICES.md
+companion_app_implementation_plan.md

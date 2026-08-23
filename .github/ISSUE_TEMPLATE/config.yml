@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/Game-Buddy/GGanbu-App-Bridge/discussions
+    about: Ask usage questions and discuss early product ideas.
+  - name: Report a security vulnerability
+    url: https://github.com/Game-Buddy/GGanbu-App-Bridge/security/advisories/new
+    about: Privately report a suspected security vulnerability.

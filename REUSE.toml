@@ -1,0 +1,39 @@
+version = 1
+
+[[annotations]]
+path = [
+    ".editorconfig",
+    ".env",
+    ".githooks/**",
+    ".github/**",
+    ".gitignore",
+    ".impeccable.md",
+    ".prettierignore",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "README.md",
+    "REUSE.toml",
+    "SECURITY.md",
+    "TRADEMARKS.md",
+    "VERSION",
+    "docs/**",
+    "eslint.config.js",
+    "index.html",
+    "package.json",
+    "pnpm-lock.yaml",
+    "rust-toolchain.toml",
+    "scripts/**",
+    "src/**",
+    "src-tauri/**",
+    "tsconfig.json",
+    "vite.config.ts",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Game Buddy"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = ["src-tauri/assets/config/hotkeys/**"]
+precedence = "override"
+SPDX-License-Identifier = "LicenseRef-War-Thunder-Compatibility"

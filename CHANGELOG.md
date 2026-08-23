@@ -1,0 +1,87 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+
+- License the project under GNU AGPL version 3 only and publish corresponding source with desktop releases.
+- Require users to select their own War Thunder keybindings file instead of loading extracted presets bundled with the application.
+
+### Removed
+
+- Remove extracted War Thunder keybinding presets from the repository and desktop packages.
+
+## [0.4.5] - 2026-08-23
+
+### Added
+
+- Require every pull request merged into `main` to update the application version and changelog.
+
+### Changed
+
+- Run the signed desktop release workflow from the merged `main` version and skip versions that already have a GitHub Release.
+
+## [0.4.4] - 2026-08-21
+
+### Fixed
+
+- Keep the status and activity layouts readable at the 16:9 minimum window size.
+- Enforce the 960×540 minimum native window size and give Activity more room for Action IDs.
+
+## [0.4.3] - 2026-08-21
+
+### Fixed
+
+- Ensure local optimized builds load the bundled `.env` origin allowlist while tagged release builds retain the static production policy.
+- Allow configured local origins such as `http://localhost:5177` to pass bridge CORS checks in local builds.
+
+## [0.4.2] - 2026-08-21
+
+### Changed
+
+- Read the development origin allowlist from `GGANBU_BRIDGE_ALLOWED_ORIGINS` in `.env`.
+- Use the static `https://gganbu.app` origin allowlist in release builds.
+- Include the origin policy behavior in the bridge build documentation.
+
+## [0.4.1] - 2026-08-21
+
+### Changed
+
+- Updated frontend and Rust dependency versions while retaining compatibility with the existing OPAQUE and RNG integrations.
+- Updated pinned release workflow actions for artifact downloads and build attestations.
+- Grouped npm, Cargo, and GitHub Actions Dependabot updates into one weekly pull request.
+
+## [0.4.0] - 2026-08-20
+
+### Added
+
+- Initial public repository scaffold, contribution guidance, security policy, and community templates.
+- Tauri 2 desktop application with a React frontend and Rust local bridge service.
+- Local bridge server controls and live status reporting in the desktop UI.
+- Secure pairing and authenticated message flows using the OPAQUE protocol and encrypted envelopes.
+- Action catalog and War Thunder hotkey mappings for keyboard, gamepad, joystick, and simulator presets.
+- Platform-aware native keyboard execution for Windows, X11, and Wayland environments.
+- JavaScript and Rust quality checks, CodeQL analysis, dependency auditing, and signed release workflow configuration.
+
+### Changed
+
+- Consolidated bridge state, action history, pairing status, and server lifecycle updates into the desktop UI.
+- Added persistent device security state and guarded bridge request handling.
+
+### Security
+
+- Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
+- Added release-signing documentation and verification workflow configuration.
+
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/tag/v0.4.0

@@ -1,0 +1,497 @@
+name: Signed desktop release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      should_release: ${{ steps.release.outputs.should_release }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+    steps:
+      - name: Check out main and history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Validate main version and changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm version:check
+          expected_version="$(tr -d '[:space:]' < VERSION)"
+          echo "Release candidate version: $expected_version"
+
+      - name: Validate release licensing
+        run: node scripts/license-check.mjs
+
+      - name: Verify this run is the current main tip
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          main_commit="$(git rev-parse refs/remotes/origin/main)"
+          test "$GITHUB_SHA" = "$main_commit" || {
+            echo "main advanced after this workflow was queued; refusing to release an older commit" >&2
+            exit 1
+          }
+
+      - name: Decide whether this version needs a release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          release_tag="v$version"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $release_tag; skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$release_tag:refs/tags/$release_tag"
+            tag_commit="$(git rev-list -n 1 "$release_tag^{commit}")"
+            test "$tag_commit" = "$GITHUB_SHA" || {
+              echo "Existing tag $release_tag does not point at the current main commit" >&2
+              exit 1
+            }
+            echo "Using existing tag $release_tag for this retry."
+          else
+            echo "No release exists for $release_tag; the approved release job will create it."
+          fi
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+  create-release-tag:
+    name: Create release tag
+    needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag for the approved main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_commit="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$GITHUB_SHA" = "$main_commit" || {
+            echo "main advanced during release approval; refusing to tag an older commit" >&2
+            exit 1
+          }
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists."
+            exit 0
+          fi
+
+          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f "tag=$RELEASE_TAG" \
+            -f "message=Release $RELEASE_TAG" \
+            -f "object=$GITHUB_SHA" \
+            -f "type=commit" \
+            --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" \
+            -f "sha=$tag_sha" >/dev/null
+
+  build-linux:
+    name: Linux AppImage
+    needs: [preflight, create-release-tag]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GGANBU_RELEASE_BUILD: "1"
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Check release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm version:check
+          expected_version="$(tr -d '[:space:]' < VERSION)"
+          tag_version="${RELEASE_TAG#v}"
+          test "$tag_version" = "$expected_version" || {
+            echo "Tag $RELEASE_TAG does not match VERSION $expected_version" >&2
+            exit 1
+          }
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build AppImage
+        run: pnpm tauri build --bundles appimage
+
+      - name: Verify license notices
+        run: pnpm license:check
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: gganbu-app-bridge.spdx.json
+          upload-artifact: false
+
+      - name: Upload unsigned Linux files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-linux-x86_64
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            gganbu-app-bridge.spdx.json
+          if-no-files-found: error
+
+  sign-linux:
+    name: Sign Linux AppImage
+    needs: [preflight, build-linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download unsigned Linux files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-linux-x86_64
+          path: unsigned
+
+      - name: Sign AppImage and create checksums
+        shell: bash
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "${LINUX_GPG_PRIVATE_KEY:-}" || {
+            echo "LINUX_GPG_PRIVATE_KEY is required for releases" >&2
+            exit 1
+          }
+          mkdir -p release
+          mapfile -t appimages < <(find unsigned -type f -name '*.AppImage' -print)
+          test "${#appimages[@]}" -gt 0 || {
+            echo "Tauri did not produce an AppImage" >&2
+            exit 1
+          }
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          for appimage in "${appimages[@]}"; do
+            cp "$appimage" release/
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase "${LINUX_GPG_PASSPHRASE:-}" \
+              --detach-sign --armor "release/$(basename "$appimage")"
+          done
+          tag_version="${RELEASE_TAG#v}"
+          source_name="gganbu-app-bridge-${tag_version}-source.tar.gz"
+          git archive \
+            --format=tar.gz \
+            --prefix="gganbu-app-bridge-${tag_version}/" \
+            --output="release/${source_name}" \
+            HEAD
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${LINUX_GPG_PASSPHRASE:-}" \
+            --detach-sign --armor "release/${source_name}"
+          cp unsigned/gganbu-app-bridge.spdx.json release/
+          (cd release && sha256sum -- * > SHA256SUMS-linux-x86_64)
+
+      - name: Attest signed AppImage
+        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*.AppImage
+
+      - name: Attest SBOM
+        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: release/*.AppImage
+          sbom-path: release/gganbu-app-bridge.spdx.json
+
+      - name: Upload Linux release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-linux-x86_64
+          path: release
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows NSIS installer
+    needs: [preflight, create-release-tag]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      GGANBU_RELEASE_BUILD: "1"
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Check release version
+        shell: pwsh
+        run: |
+          pnpm version:check
+          $expectedVersion = (Get-Content VERSION -Raw).Trim()
+          $tagVersion = $env:RELEASE_TAG -replace '^v', ''
+          if ($tagVersion -ne $expectedVersion) {
+            throw "Tag $env:RELEASE_TAG does not match VERSION $expectedVersion"
+          }
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build NSIS installer
+        run: pnpm tauri build --bundles nsis
+
+      - name: Upload unsigned NSIS installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-windows-x86_64
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  sign-windows:
+    name: Sign Windows NSIS installer
+    needs: [preflight, build-windows]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download unsigned NSIS installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-windows-x86_64
+          path: unsigned
+
+      - name: Sign Windows installer and create checksum
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64)) {
+            throw "WINDOWS_CERTIFICATE_BASE64 is required for releases"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw "WINDOWS_CERTIFICATE_PASSWORD is required for releases"
+          }
+          $releaseDirectory = "release"
+          New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
+          $pfxPath = Join-Path $env:RUNNER_TEMP "gganbu-app-bridge-signing.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Directory |
+            Sort-Object { [version]$_.Name } -Descending |
+            ForEach-Object { Get-ChildItem $_.FullName -Filter signtool.exe -Recurse } |
+            Select-Object -First 1
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found"
+          }
+          $installers = @(Get-ChildItem "unsigned" -File -Filter *.exe -Recurse)
+          if ($installers.Count -eq 0) {
+            throw "Tauri did not produce an NSIS installer"
+          }
+          foreach ($installer in $installers) {
+            Copy-Item $installer.FullName $releaseDirectory
+            & $signtool.FullName sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 (Join-Path $releaseDirectory $installer.Name)
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool failed for $($installer.Name)"
+            }
+          }
+          $hashLines = foreach ($file in (Get-ChildItem $releaseDirectory -File)) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $hashLines | Set-Content (Join-Path $releaseDirectory "SHA256SUMS-windows-x86_64")
+
+      - name: Attest signed installer
+        if: vars.ENABLE_BUILD_ATTESTATIONS == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*.exe
+
+      - name: Upload Windows release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-windows-x86_64
+          path: release
+          if-no-files-found: error
+
+  publish:
+    name: Publish signed release
+    needs: [preflight, sign-linux, sign-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download Linux release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-linux-x86_64
+          path: release-files
+
+      - name: Download Windows release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-windows-x86_64
+          path: release-files
+
+      - name: Verify and assemble release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          mapfile -t platform_checksums < <(find release-files -type f -name 'SHA256SUMS-*' -print | sort)
+          test "${#platform_checksums[@]}" -gt 0 || {
+            echo "Platform checksum files are missing" >&2
+            exit 1
+          }
+          find release-files -type f -not -name 'SHA256SUMS-*' -exec cp {} release/ \;
+          test -n "$(find release -type f -print -quit)"
+          for checksum_file in "${platform_checksums[@]}"; do
+            checksum_name="$(basename "$checksum_file")"
+            cp "$checksum_file" "release/$checksum_name"
+            (cd release && sha256sum --check "$checksum_name")
+          done
+          (cd release && sha256sum -- * > SHA256SUMS)
+          (cd release && sha256sum --check SHA256SUMS)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $RELEASE_TAG; nothing to publish."
+            exit 0
+          fi
+          mapfile -t release_files < <(find release -maxdepth 1 -type f -print | sort)
+          prerelease_args=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" "${release_files[@]}" "${prerelease_args[@]}" \
+            --title "$RELEASE_TAG" \
+            --generate-notes \
+            --verify-tag

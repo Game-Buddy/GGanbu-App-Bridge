@@ -1,0 +1,56 @@
+[package]
+name = "gganbu-app-bridge"
+version = "0.4.5"
+description = "Secure local companion bridge for GGanbu.app"
+authors = ["GGanbu Dev"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/Game-Buddy/GGanbu-App-Bridge"
+homepage = "https://github.com/Game-Buddy/GGanbu-App-Bridge"
+edition = "2024"
+rust-version = "1.94.1"
+
+[lib]
+name = "gganbu_app_bridge_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.x", features = [] }
+
+[dependencies]
+axum = "0.8.x"
+chrono = { version = "0.4.x", default-features = false, features = ["clock", "serde"] }
+dotenvy = "0.15.x"
+http = "1.x"
+mime = "0.3.x"
+serde = { version = "1.x", features = ["derive"] }
+serde_json = "1.x"
+tauri = { version = "2.11.x", features = ["image-png"] }
+tokio = { version = "1.x", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util = "0.7.x"
+tower = { version = "0.5.x", features = ["util"] }
+tower-http = { version = "0.7.x", features = ["cors", "limit", "trace"] }
+tracing = "0.1.x"
+tracing-subscriber = { version = "0.3.x", features = ["env-filter"] }
+url = "2.x"
+opaque-ke = { version = "4.0.1", features = ["argon2"] }
+hkdf = "0.12.x"
+chacha20poly1305 = "0.10.x"
+sha2 = "0.10.x"
+base64 = "0.23.1"
+keyring = "4.1.5"
+rand = "0.8.x"
+rand_chacha = "0.3.x"
+zeroize = "1.x"
+rfd = "0.17.2"
+rust-embed = "8.x"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13.x", features = ["remote_desktop", "screencast"] }
+enumflags2 = "0.7.x"
+x11rb = { version = "0.14.x", features = ["xtest"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.x", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[dev-dependencies]
+http-body-util = "0.1.x"
