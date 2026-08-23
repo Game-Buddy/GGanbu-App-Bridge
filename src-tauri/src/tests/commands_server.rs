@@ -26,18 +26,23 @@ fn old_server_completion_cannot_clear_a_new_start() {
 fn stop_waits_for_an_in_progress_start_transition() {
     let control = Arc::new(ServerControl::new());
     let start_guard = control.begin_start().expect("start should acquire control");
+    let (entered_sender, entered_receiver) = mpsc::channel();
     let (done_sender, done_receiver) = mpsc::channel();
     let stop_control = Arc::clone(&control);
 
     thread::spawn(move || {
-        stop_control.stop();
+        stop_control.stop_for_test(|| entered_sender.send(()).unwrap());
         done_sender.send(()).unwrap();
     });
 
+    entered_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("stop should enter before the blocking assertion");
     assert!(
         done_receiver
             .recv_timeout(Duration::from_millis(25))
-            .is_err()
+            .is_err(),
+        "stop must remain blocked by the in-progress start transition"
     );
     drop(start_guard);
     done_receiver

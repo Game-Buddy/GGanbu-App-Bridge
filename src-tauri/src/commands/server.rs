@@ -60,6 +60,16 @@ impl ServerControl {
     }
 
     fn stop(&self) {
+        self.stop_with_enter_hook(|| {});
+    }
+
+    #[cfg(test)]
+    fn stop_for_test(&self, on_enter: impl FnOnce()) {
+        self.stop_with_enter_hook(on_enter);
+    }
+
+    fn stop_with_enter_hook(&self, on_enter: impl FnOnce()) {
+        on_enter();
         let mut cancellation = self
             .cancellation
             .lock()
