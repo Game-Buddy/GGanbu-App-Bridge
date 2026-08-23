@@ -48,25 +48,43 @@ pub(crate) fn run() {
             };
 
             if let Some(window) = app.get_webview_window("main") {
-                window
-                    .set_min_size(Some(LogicalSize::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)))
-                    .expect("failed to set minimum window size");
-                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
-                    .expect("failed to load application icon");
-                window
-                    .set_icon(icon)
-                    .expect("failed to set application icon");
+                if let Err(error) =
+                    window.set_min_size(Some(LogicalSize::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)))
+                {
+                    tracing::warn!(%error, "could not set minimum window size");
+                }
+                match tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")) {
+                    Ok(icon) => {
+                        if let Err(error) = window.set_icon(icon) {
+                            tracing::warn!(%error, "could not set application icon");
+                        }
+                    }
+                    Err(error) => tracing::warn!(%error, "could not load application icon"),
+                }
             }
 
             let publisher: StatePublisher = state_publisher(app.handle());
-            let security_path = app.path().app_data_dir()?.join("security.json");
-            let security = match SecurityState::load(security::DeviceStore::new(security_path)) {
-                Ok(security) => security,
+            let security = match app.path().app_data_dir() {
+                Ok(app_data_dir) => {
+                    let security_path = app_data_dir.join("security.json");
+                    match SecurityState::load(security::DeviceStore::new(security_path)) {
+                        Ok(security) => security,
+                        Err(error) => {
+                            tracing::error!(%error, "could not load security storage");
+                            setup_bridge.set_server_status(
+                                ServerStatus::Error,
+                                Some(format!("Security storage unavailable: {error}")),
+                                &publisher,
+                            );
+                            SecurityState::default()
+                        }
+                    }
+                }
                 Err(error) => {
-                    tracing::error!(%error, "could not load security storage");
+                    tracing::error!(%error, "could not resolve application data directory");
                     setup_bridge.set_server_status(
                         ServerStatus::Error,
-                        Some(format!("Security storage unavailable: {error}")),
+                        Some(format!("Application data directory unavailable: {error}")),
                         &publisher,
                     );
                     SecurityState::default()

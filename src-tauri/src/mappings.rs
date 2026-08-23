@@ -4,7 +4,7 @@
 use std::{
     fs,
     io::Read,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::OnceLock,
 };
 
@@ -148,6 +148,53 @@ fn resolve_case_insensitive(path: &Path) -> std::io::Result<PathBuf> {
     Ok(entry.path())
 }
 
+fn resolve_base_preset(path: &Path, base: &str) -> Result<PathBuf, String> {
+    let candidate = Path::new(base);
+    if candidate.is_absolute()
+        || candidate
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(format!("unsupported basePresetPaths entry '{base}'"));
+    }
+
+    let root = if base.starts_with("config/") {
+        path.ancestors()
+            .find(|candidate| candidate.file_name().is_some_and(|name| name == "assets"))
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| {
+                ASSET_ROOT
+                    .get()
+                    .cloned()
+                    .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"))
+            })
+    } else {
+        path.parent().unwrap_or(Path::new(".")).to_path_buf()
+    };
+    let mut target = root.join(candidate);
+    // War Thunder presets sometimes reference the legacy .blk suffix while
+    // the distributed asset is stored as JSON with a .blkx suffix.
+    if resolve_case_insensitive(&target).is_err()
+        && target
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("blk"))
+    {
+        target.set_extension("blkx");
+    }
+
+    let resolved = resolve_case_insensitive(&target)
+        .and_then(fs::canonicalize)
+        .map_err(|error| format!("could not resolve basePresetPaths entry '{base}': {error}"))?;
+    let canonical_root = fs::canonicalize(&root)
+        .map_err(|error| format!("could not resolve preset root for '{base}': {error}"))?;
+    if !resolved.starts_with(&canonical_root) {
+        return Err(format!(
+            "basePresetPaths entry '{base}' escapes its preset root"
+        ));
+    }
+    Ok(resolved)
+}
+
 fn load_keybinding_chain(
     path: &Path,
     files: &mut Vec<String>,
@@ -204,29 +251,7 @@ fn load_keybinding_chain(
         .and_then(serde_json::Value::as_object)
     {
         for base in bases.values().filter_map(serde_json::Value::as_str) {
-            let mut parent = if base.starts_with("config/") {
-                let asset_root = path
-                    .ancestors()
-                    .find(|candidate| candidate.file_name().is_some_and(|name| name == "assets"))
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| {
-                        ASSET_ROOT.get().cloned().unwrap_or_else(|| {
-                            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
-                        })
-                    });
-                asset_root.join(base)
-            } else {
-                path.parent().unwrap_or(Path::new(".")).join(base)
-            };
-            // War Thunder presets sometimes reference the legacy .blk suffix while
-            // the distributed asset is stored as JSON with a .blkx suffix.
-            if resolve_case_insensitive(&parent).is_err()
-                && parent
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("blk"))
-            {
-                parent.set_extension("blkx");
-            }
+            let parent = resolve_base_preset(&path, base)?;
             load_keybinding_chain(&parent, files, seen, merged)?;
         }
     }

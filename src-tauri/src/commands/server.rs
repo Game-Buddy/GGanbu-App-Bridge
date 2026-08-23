@@ -5,7 +5,7 @@ use std::{
     fs,
     net::SocketAddr,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -47,6 +47,28 @@ impl ServerControl {
             .expect("server control lock poisoned")
             .cancel();
     }
+
+    fn begin_start(&self) -> Option<MutexGuard<'_, CancellationToken>> {
+        let cancellation = self
+            .cancellation
+            .lock()
+            .expect("server control lock poisoned");
+        if self.started.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        Some(cancellation)
+    }
+
+    fn stop(&self) {
+        let mut cancellation = self
+            .cancellation
+            .lock()
+            .expect("server control lock poisoned");
+        self.started.store(false, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        cancellation.cancel();
+        *cancellation = CancellationToken::new();
+    }
 }
 
 fn finish_server_generation(
@@ -68,9 +90,9 @@ pub(crate) fn start_server(
     security: tauri::State<'_, SecurityState>,
     control: tauri::State<'_, ServerControl>,
 ) -> Result<(), String> {
-    if control.started.swap(true, Ordering::AcqRel) {
+    let Some(mut cancellation_guard) = control.begin_start() else {
         return Ok(());
-    }
+    };
     if !security.is_persistent() {
         control.started.store(false, Ordering::Release);
         return Err("security storage is unavailable".to_owned());
@@ -110,14 +132,8 @@ pub(crate) fn start_server(
         security.inner().clone(),
     );
     let task_bridge = bridge.inner().clone();
-    let cancellation = {
-        let mut current = control
-            .cancellation
-            .lock()
-            .expect("server control lock poisoned");
-        *current = CancellationToken::new();
-        current.clone()
-    };
+    *cancellation_guard = CancellationToken::new();
+    let cancellation = cancellation_guard.clone();
     let generation = control.generation.fetch_add(1, Ordering::AcqRel) + 1;
     let started = control.started.clone();
     let current_generation = control.generation.clone();
@@ -143,9 +159,7 @@ pub(crate) fn stop_server(
     security.clear_pairing_and_code();
     super::bridge::publish_security_snapshot(&app, &bridge, &security);
     let _ = app.emit("pairing-status-changed", pairing_status(&security));
-    control.started.store(false, Ordering::Release);
-    control.generation.fetch_add(1, Ordering::AcqRel);
-    control.cancel();
+    control.stop();
 }
 
 #[cfg(test)]

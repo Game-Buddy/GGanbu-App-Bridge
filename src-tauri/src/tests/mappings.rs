@@ -46,3 +46,28 @@ fn rejects_oversized_keybinding_files_before_parsing() {
     let error = result.expect_err("oversized input must be rejected");
     assert!(error.contains("byte limit"));
 }
+
+#[test]
+fn rejects_base_preset_paths_that_escape_the_preset_root() {
+    let path = std::env::temp_dir().join(format!(
+        "gganbu-keybindings-unsafe-base-{}-{}.blkx",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    fs::write(
+        &path,
+        r#"{"controls":{"basePresetPaths":{"escape":"../outside.blkx"}}}"#,
+    )
+    .expect("test fixture should be writable");
+
+    let result = load_keybinding_chain(
+        &path,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut serde_json::Map::new(),
+    );
+    let _ = fs::remove_file(&path);
+
+    let error = result.expect_err("parent-directory base must be rejected");
+    assert!(error.contains("unsupported basePresetPaths entry"));
+}

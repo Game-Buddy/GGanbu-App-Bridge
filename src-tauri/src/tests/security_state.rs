@@ -109,8 +109,24 @@ fn device_login_failures_are_rate_limited_and_clear_after_success() {
 #[test]
 fn device_login_failure_tracking_is_bounded() {
     let state = SecurityState::default();
+    let now = Utc::now();
+    for index in 0..=MAX_TRACKED_LOGIN_FAILURES {
+        let device_id = format!("device-{index}");
+        state
+            .add_device(DeviceRecord::new(
+                device_id.clone(),
+                device_id.clone(),
+                vec![1],
+                now,
+            ))
+            .unwrap();
+        state.record_device_login_failure(&device_id);
+    }
     let inner = state.inner.read().unwrap();
-    assert!(inner.device_login_failures.is_empty());
+    assert_eq!(
+        inner.device_login_failures.len(),
+        MAX_TRACKED_LOGIN_FAILURES
+    );
 }
 
 #[test]

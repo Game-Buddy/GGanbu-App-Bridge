@@ -9,6 +9,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+const MAX_TRACKED_LOGIN_FAILURES: usize = 1024;
+
 #[derive(Default)]
 struct Inner {
     pairing: Option<PairingSession>,
@@ -512,7 +514,6 @@ impl SecurityState {
 
     pub fn record_device_login_failure(&self, device_id: &str) {
         const LOGIN_FAILURE_WINDOW_SECONDS: i64 = 30;
-        const MAX_TRACKED_DEVICES: usize = 1024;
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let now = Utc::now();
         let cutoff = now - chrono::Duration::seconds(LOGIN_FAILURE_WINDOW_SECONDS);
@@ -527,7 +528,7 @@ impl SecurityState {
             failures.retain(|timestamp| *timestamp > cutoff);
             !failures.is_empty()
         });
-        if inner.device_login_failures.len() >= MAX_TRACKED_DEVICES
+        if inner.device_login_failures.len() >= MAX_TRACKED_LOGIN_FAILURES
             && !inner.device_login_failures.contains_key(device_id)
         {
             tracing::warn!("maximum tracked login-failure devices reached");
