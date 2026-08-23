@@ -2,8 +2,7 @@ name: Signed desktop release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main]
 
 permissions: {}
 
@@ -18,8 +17,11 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      should_release: ${{ steps.release.outputs.should_release }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
-      - name: Check out release tag and history
+      - name: Check out main and history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -37,51 +39,98 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Validate version and tag
+      - name: Validate main version and changelog
         shell: bash
         run: |
           set -euo pipefail
           pnpm version:check
           expected_version="$(tr -d '[:space:]' < VERSION)"
-          tag_version="${GITHUB_REF_NAME#v}"
-          test "$tag_version" = "$expected_version" || {
-            echo "Tag $GITHUB_REF_NAME does not match VERSION $expected_version" >&2
-            exit 1
-          }
+          echo "Release candidate version: $expected_version"
 
       - name: Validate release licensing
         run: node scripts/license-check.mjs
 
-      - name: Verify tag is reachable from main
+      - name: Verify this run is the current main tip
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
-          tag_commit="$(git rev-parse HEAD)"
           main_commit="$(git rev-parse refs/remotes/origin/main)"
-          git merge-base --is-ancestor "$tag_commit" "$main_commit" || {
-            echo "Tag $GITHUB_REF_NAME is not reachable from main" >&2
+          test "$GITHUB_SHA" = "$main_commit" || {
+            echo "main advanced after this workflow was queued; refusing to release an older commit" >&2
             exit 1
           }
 
-      - name: Refuse to overwrite an existing release
+      - name: Decide whether this version needs a release
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "A GitHub Release already exists for $GITHUB_REF_NAME" >&2
-            exit 1
+          version="$(tr -d '[:space:]' < VERSION)"
+          release_tag="v$version"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $release_tag; skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          if git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$release_tag:refs/tags/$release_tag"
+            tag_commit="$(git rev-list -n 1 "$release_tag^{commit}")"
+            test "$tag_commit" = "$GITHUB_SHA" || {
+              echo "Existing tag $release_tag does not point at the current main commit" >&2
+              exit 1
+            }
+            echo "Using existing tag $release_tag for this retry."
+          else
+            echo "No release exists for $release_tag; the approved release job will create it."
+          fi
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+  create-release-tag:
+    name: Create release tag
+    needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag for the approved main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists."
+            exit 0
+          fi
+
+          tag_sha="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f "tag=$RELEASE_TAG" \
+            -f "message=Release $RELEASE_TAG" \
+            -f "object=$GITHUB_SHA" \
+            -f "type=commit" \
+            --jq .sha)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" \
+            -f "sha=$tag_sha" >/dev/null
 
   build-linux:
     name: Linux AppImage
-    needs: preflight
+    needs: [preflight, create-release-tag]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       GGANBU_RELEASE_BUILD: "1"
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
     permissions:
       contents: read
     steps:
@@ -123,9 +172,9 @@ jobs:
           set -euo pipefail
           pnpm version:check
           expected_version="$(tr -d '[:space:]' < VERSION)"
-          tag_version="${GITHUB_REF_NAME#v}"
+          tag_version="${RELEASE_TAG#v}"
           test "$tag_version" = "$expected_version" || {
-            echo "Tag $GITHUB_REF_NAME does not match VERSION $expected_version" >&2
+            echo "Tag $RELEASE_TAG does not match VERSION $expected_version" >&2
             exit 1
           }
 
@@ -162,16 +211,18 @@ jobs:
 
   sign-linux:
     name: Sign Linux AppImage
-    needs: build-linux
+    needs: [preflight, build-linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
     permissions:
       contents: read
       id-token: write
       attestations: write
     steps:
-      - name: Check out release tag
+      - name: Check out the release candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -207,7 +258,7 @@ jobs:
               --passphrase "${LINUX_GPG_PASSPHRASE:-}" \
               --detach-sign --armor "release/$(basename "$appimage")"
           done
-          tag_version="${GITHUB_REF_NAME#v}"
+          tag_version="${RELEASE_TAG#v}"
           source_name="gganbu-app-bridge-${tag_version}-source.tar.gz"
           git archive \
             --format=tar.gz \
@@ -242,11 +293,12 @@ jobs:
 
   build-windows:
     name: Windows NSIS installer
-    needs: preflight
+    needs: [preflight, create-release-tag]
     runs-on: windows-2025
     timeout-minutes: 60
     env:
       GGANBU_RELEASE_BUILD: "1"
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
     permissions:
       contents: read
     steps:
@@ -272,9 +324,9 @@ jobs:
         run: |
           pnpm version:check
           $expectedVersion = (Get-Content VERSION -Raw).Trim()
-          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          $tagVersion = $env:RELEASE_TAG -replace '^v', ''
           if ($tagVersion -ne $expectedVersion) {
-            throw "Tag $env:GITHUB_REF_NAME does not match VERSION $expectedVersion"
+            throw "Tag $env:RELEASE_TAG does not match VERSION $expectedVersion"
           }
 
       - name: Install Rust 1.94.1
@@ -297,10 +349,12 @@ jobs:
 
   sign-windows:
     name: Sign Windows NSIS installer
-    needs: build-windows
+    needs: [preflight, build-windows]
     runs-on: windows-2025
     timeout-minutes: 20
     environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
     permissions:
       contents: read
       id-token: write
@@ -369,14 +423,16 @@ jobs:
 
   publish:
     name: Publish signed release
-    needs: [sign-linux, sign-windows]
+    needs: [preflight, sign-linux, sign-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
     permissions:
       contents: write
     steps:
-      - name: Check out release tag
+      - name: Check out the release candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -420,16 +476,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "A GitHub Release already exists for $GITHUB_REF_NAME" >&2
-            exit 1
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $RELEASE_TAG; nothing to publish."
+            exit 0
           fi
           mapfile -t release_files < <(find release -maxdepth 1 -type f -print | sort)
           prerelease_args=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+          if [[ "$RELEASE_TAG" == *-* ]]; then
             prerelease_args+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" "${release_files[@]}" "${prerelease_args[@]}" \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" "${release_files[@]}" "${prerelease_args[@]}" \
+            --title "$RELEASE_TAG" \
             --generate-notes \
             --verify-tag

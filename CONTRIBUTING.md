@@ -15,7 +15,9 @@ Thanks for helping improve GGanbu App Bridge. The repository is currently being 
 2. Keep the branch focused on one change.
 3. Open the pull request against `main` and complete the pull-request template.
 4. Merge the pull request into `main` after the required checks pass.
-5. For a release, create the version tag on the resulting `main` commit.
+5. The merged `main` commit starts the release workflow when its version has
+   not already been released. The protected release environment controls
+   approval, tag creation, signing, and publication.
 
 Direct pushes to `main` are not part of the normal workflow.
 
@@ -46,6 +48,7 @@ This updates the package, Cargo, Tauri, and frontend version files. Run `pnpm ve
 - Link related issues with `Closes #123` when appropriate.
 - Include testing evidence and screenshots for UI changes.
 - Add or update tests for behavior changes.
+- Update the application version with `pnpm version:set` for every pull request.
 - Update documentation and `CHANGELOG.md` for user-visible changes.
 - Do not include generated build outputs, secrets, signing keys, tokens, or credentials.
 - Resolve review conversations before requesting final approval.

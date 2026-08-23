@@ -23,5 +23,6 @@
 
 - [ ] I added or updated tests for behavior changes.
 - [ ] I updated documentation and `CHANGELOG.md` for user-visible changes.
+- [ ] I updated the application version with `pnpm version:set`.
 - [ ] This change contains no tokens, credentials, private keys, signing material, or sensitive user data.
 - [ ] I reviewed new dependencies and granted only necessary workflow permissions.

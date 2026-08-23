@@ -30,7 +30,7 @@ pnpm tauri dev
 
 Development requires Node.js 24, pnpm 11, Rust 1.94.1, the Tauri prerequisites for the host operating system, and War Thunder for end-to-end integration testing.
 
-Development and local builds read `GGANBU_BRIDGE_ALLOWED_ORIGINS` from `.env` as a comma-separated list of exact browser origins. Local bundles include that public `.env` configuration. Tagged release builds set `GGANBU_RELEASE_BUILD` in CI and use only the static `https://gganbu.app` origin; do not put secrets in `.env`.
+Development and local builds read `GGANBU_BRIDGE_ALLOWED_ORIGINS` from `.env` as a comma-separated list of exact browser origins. Local bundles include that public `.env` configuration. Release builds set `GGANBU_RELEASE_BUILD` in CI and use only the static `https://gganbu.app` origin; do not put secrets in `.env`.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
@@ -38,10 +38,10 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
 - `main` is the default branch and the stable release branch.
 - Feature and fix branches are short-lived and branch from `main`.
-- Feature pull requests target `main` and must pass the required checks.
-- Version tags use semantic versions such as `v1.0.0` and trigger the signed release workflow.
+- Feature pull requests target `main`, must pass the required checks, and must update the synchronized application version and `CHANGELOG.md`.
+- A push to `main` checks the version in the merged commit. If that version has no GitHub Release, the approved workflow creates its protected semantic version tag, builds the desktop packages, and publishes the signed release.
 
-Pushes to `main` produce QA packages. Stable installers come only from signed GitHub Releases created from version tags on the merged `main` commit.
+Pushes to `main` also produce QA packages. Stable installers come only from signed GitHub Releases created by the approved release workflow.
 
 The maintainer-side GitHub settings that cannot be enforced by committed files are tracked in [docs/repository-governance.md](./docs/repository-governance.md).
 

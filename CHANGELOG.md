@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove extracted War Thunder keybinding presets from the repository and desktop packages.
 
+## [0.4.5] - 2026-08-23
+
+### Added
+
+- Require every pull request merged into `main` to update the application version and changelog.
+
+### Changed
+
+- Run the signed desktop release workflow from the merged `main` version and skip versions that already have a GitHub Release.
+
 ## [0.4.4] - 2026-08-21
 
 ### Fixed
@@ -68,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.4...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.1...v0.4.2

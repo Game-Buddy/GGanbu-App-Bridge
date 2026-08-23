@@ -1661,7 +1661,7 @@ dependencies = [
 
 [[package]]
 name = "gganbu-app-bridge"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "ashpd",
  "axum",
