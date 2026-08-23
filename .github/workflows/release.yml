@@ -189,6 +189,9 @@ jobs:
         with:
           toolchain: 1.94.1
 
+      - name: Fetch locked Rust dependencies
+        run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
