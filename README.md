@@ -3,7 +3,7 @@
 GGanbu App Bridge is the future public home of the GGanbu desktop companion. The application will provide secure local communication between the GGanbu.app browser experience and native operating-system capabilities.
 
 > [!IMPORTANT]
-> This repository contains the working desktop bridge application. Signed installers and a stable public release are still pending.
+> This repository contains the working desktop bridge application. A stable public release and Microsoft Store listing are still pending.
 
 ## Planned platforms
 
@@ -14,9 +14,9 @@ macOS support is not currently planned. The supported platform list will be upda
 
 ## Installation
 
-There is no installable release yet. When the first signed build is published, download it from [GitHub Releases](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest). Release assets will be platform-specific and accompanied by `SHA256SUMS` and detached signatures.
+There is no installable release yet. Windows users will install the app from its official Microsoft Store listing after publication. Linux releases will be available from [GitHub Releases](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest) with `SHA256SUMS` and detached signatures.
 
-Do not download installers from mirrors or third-party websites.
+Do not install unsigned Windows artifacts from GitHub Actions or download installers from mirrors and third-party websites.
 
 ## Quick start for contributors
 
@@ -42,15 +42,16 @@ The Tauri source layout, trust boundaries, and request flow are documented in
 - `main` is the default branch and the stable release branch.
 - Feature and fix branches are short-lived and branch from `main`.
 - Feature pull requests target `main`, must pass the required checks, and must update the synchronized application version and `CHANGELOG.md`.
-- After `Checks and desktop builds` and `CodeQL` succeed for `main`, the approved workflow checks the version in that tested commit. If that version has no GitHub Release, it builds and signs the desktop packages, then creates its protected semantic version tag and publishes the signed release.
+- After `Checks and desktop builds` and `CodeQL` succeed for `main`, the approved workflow checks the version in that tested commit. If that version has no GitHub Release, it builds the desktop packages, signs the Linux release, creates its protected semantic version tag, and publishes the Linux release.
+- The same workflow creates an unsigned Windows MSIX for Partner Center and keeps it out of GitHub Releases. Microsoft signs and distributes the accepted package through the Store; the unsigned submission artifact is not a public installer.
 
-Pushes to `main` also produce QA packages. Stable installers come only from signed GitHub Releases created by the approved release workflow.
+Pushes to `main` also produce QA packages. Stable Linux builds come only from signed GitHub Releases, and stable Windows builds come only from the Microsoft Store.
 
 The maintainer-side GitHub settings that cannot be enforced by committed files are tracked in [docs/repository-governance.md](./docs/repository-governance.md).
 
 ## Security
 
-Please do not disclose vulnerabilities in a public issue. Follow the private reporting instructions in [SECURITY.md](./SECURITY.md). Release verification and signing setup are documented in [docs/security/release-signing.md](./docs/security/release-signing.md).
+Please do not disclose vulnerabilities in a public issue. Follow the private reporting instructions in [SECURITY.md](./SECURITY.md). Release verification and signing setup are documented in [docs/security/release-signing.md](./docs/security/release-signing.md), and the Windows submission process is documented in [docs/windows-store.md](./docs/windows-store.md).
 
 ## Troubleshooting
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-23
+
+### Added
+
+- Add a tested MSIX manifest renderer, Store assets, package staging, and Partner Center submission runbook.
+
+### Changed
+
+- Build unsigned Windows MSIX submission artifacts with Microsoft's Windows App CLI while Microsoft Store certification provides the trusted public signature.
+- Keep Windows submission packages in Actions artifacts and publish only signed Linux binaries through GitHub Releases.
+
 ## [0.4.9] - 2026-08-23
 
 ### Fixed
@@ -101,7 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.9...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.9...v0.5.0
 [0.4.9]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.6...v0.4.7

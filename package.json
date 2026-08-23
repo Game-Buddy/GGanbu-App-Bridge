@@ -1,7 +1,7 @@
 {
   "name": "gganbu-app-bridge",
   "private": true,
-  "version": "0.4.9",
+  "version": "0.5.0",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -17,6 +17,8 @@
     "tauri": "node scripts/tauri.mjs",
     "version:set": "node scripts/version.mjs",
     "version:check": "node scripts/version.mjs",
+    "msix:check": "node scripts/msix.mjs check",
+    "msix:prepare": "node scripts/msix.mjs prepare",
     "license:check": "node scripts/license-check.mjs && node scripts/generate-third-party-notices.mjs --check",
     "notices:generate": "node scripts/generate-third-party-notices.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
@@ -26,7 +28,7 @@
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-features",
-    "check": "pnpm version:check && pnpm license:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:rust"
+    "check": "pnpm version:check && pnpm msix:check && pnpm license:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:rust"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
