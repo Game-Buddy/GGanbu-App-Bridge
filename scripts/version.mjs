@@ -84,7 +84,7 @@ function applyPlans(plans) {
         );
       }
     }
-    throw new Error(`Could not update application versions: ${error}`);
+    throw new Error("Could not update application versions", { cause: error });
   }
 }
 

@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove extracted War Thunder keybinding presets from the repository and desktop packages.
 
+## [0.4.6] - 2026-08-23
+
+### Fixed
+
+- Restore crypto dependency versions compatible with the OPAQUE implementation.
+- Keep the version rollback path compliant with ESLint's caught-error rules.
+- Keep TypeScript on the version supported by the configured `typescript-eslint` release.
+
 ## [0.4.5] - 2026-08-23
 
 ### Added
@@ -78,7 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.5...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.2...v0.4.3
