@@ -52,9 +52,9 @@ export interface DeviceSummary {
 
 export interface BridgeSnapshot {
   revision: number;
-  applicationStatus: "running";
+  applicationStatus: string;
   serverStatus: ServerStatus;
-  endpoint: "http://0.0.0.0:53177";
+  endpoint: string;
   serverError: string | null;
   allowedOrigins: string[];
   lastMessage: ReceivedMessage | null;

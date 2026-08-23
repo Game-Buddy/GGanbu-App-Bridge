@@ -312,22 +312,6 @@ fn load_keybindings(
             if packaged.exists() {
                 packaged
             } else {
-                let embedded_root = app
-                    .path()
-                    .app_data_dir()
-                    .map_err(|e| e.to_string())?
-                    .join("assets");
-                for asset in EmbeddedAssets::iter() {
-                    let target = embedded_root.join(asset.as_ref());
-                    if let Some(parent) = target.parent() {
-                        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                    }
-                    if !target.exists()
-                        && let Some(contents) = EmbeddedAssets::get(asset.as_ref())
-                    {
-                        fs::write(target, contents.data.as_ref()).map_err(|e| e.to_string())?;
-                    }
-                }
                 embedded_root.join(DEFAULT_KEYBINDINGS)
             }
         }

@@ -35,18 +35,57 @@ function read(relativePath) {
   );
 }
 
+function readForPlan(relativePath) {
+  try {
+    return read(relativePath);
+  } catch {
+    throw new Error(`${relativePath}: found missing`);
+  }
+}
+
 function write(relativePath, contents) {
   writeFileSync(resolve(root, relativePath), contents);
 }
 
-function replaceExactly(relativePath, pattern, replacement) {
-  const contents = read(relativePath);
+function planReplacement(relativePath, pattern, replacement) {
+  const contents = readForPlan(relativePath);
   if (!pattern.test(contents)) {
     throw new Error(`Could not update version in ${relativePath}`);
   }
 
   const updated = contents.replace(pattern, replacement);
-  if (updated !== contents) write(relativePath, updated);
+  return { relativePath, original: contents, updated };
+}
+
+function planWrite(relativePath, contents) {
+  return {
+    relativePath,
+    original: readForPlan(relativePath),
+    updated: contents,
+  };
+}
+
+function applyPlans(plans) {
+  const applied = [];
+  try {
+    for (const plan of plans) {
+      if (plan.updated !== plan.original) {
+        write(plan.relativePath, plan.updated);
+        applied.push(plan);
+      }
+    }
+  } catch (error) {
+    for (const plan of applied.reverse()) {
+      try {
+        write(plan.relativePath, plan.original);
+      } catch (rollbackError) {
+        console.error(
+          `Could not roll back ${plan.relativePath}: ${rollbackError}`,
+        );
+      }
+    }
+    throw new Error(`Could not update application versions: ${error}`);
+  }
 }
 
 function escapeRegExp(value) {
@@ -54,26 +93,44 @@ function escapeRegExp(value) {
 }
 
 function expectedVersions() {
+  const readVersion = (relativePath, extract) => {
+    try {
+      return extract(read(relativePath));
+    } catch {
+      return undefined;
+    }
+  };
   return new Map([
-    ["package.json", JSON.parse(read("package.json")).version],
+    [
+      "package.json",
+      readVersion("package.json", (contents) => JSON.parse(contents).version),
+    ],
     [
       "src-tauri/Cargo.toml",
-      read("src-tauri/Cargo.toml").match(/^version = "([^"]+)"$/m)?.[1],
+      readVersion(
+        "src-tauri/Cargo.toml",
+        (contents) => contents.match(/^version = "([^"]+)"$/m)?.[1],
+      ),
     ],
     [
       "src-tauri/tauri.conf.json",
-      JSON.parse(read("src-tauri/tauri.conf.json")).version,
+      readVersion(
+        "src-tauri/tauri.conf.json",
+        (contents) => JSON.parse(contents).version,
+      ),
     ],
     [
       "src/version.ts",
-      read("src/version.ts").match(
-        /^export const APP_VERSION = "([^"]+)";$/m,
-      )?.[1],
+      readVersion(
+        "src/version.ts",
+        (contents) =>
+          contents.match(/^export const APP_VERSION = "([^"]+)";$/m)?.[1],
+      ),
     ],
   ]);
 }
 
-function checkVersions() {
+function checkVersions({ requireChangelog = true } = {}) {
   const sourceVersion = readFileSync(versionPath, "utf8").trim();
   if (!isValidSemver(sourceVersion)) {
     throw new Error(`Invalid semantic version in VERSION: ${sourceVersion}`);
@@ -84,20 +141,29 @@ function checkVersions() {
     ([, fileVersion]) => fileVersion !== sourceVersion,
   );
 
-  const lockfile = read("src-tauri/Cargo.lock");
-  const lockVersion = lockfile.match(
-    /\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = "([^"]+)"/,
-  )?.[1];
+  let lockVersion;
+  try {
+    lockVersion = read("src-tauri/Cargo.lock").match(
+      /\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = "([^"]+)"/,
+    )?.[1];
+  } catch {
+    lockVersion = undefined;
+  }
   if (lockVersion !== sourceVersion) {
     mismatches.push(["src-tauri/Cargo.lock", lockVersion]);
   }
 
-  const changelogHeading = new RegExp(
-    `^## \\[${escapeRegExp(sourceVersion)}\\](?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`,
-    "m",
-  );
-  if (!changelogHeading.test(read("CHANGELOG.md"))) {
-    mismatches.push(["CHANGELOG.md", `missing ## [${sourceVersion}] heading`]);
+  if (requireChangelog) {
+    const changelogHeading = new RegExp(
+      `^## \\[${escapeRegExp(sourceVersion)}\\](?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`,
+      "m",
+    );
+    if (!changelogHeading.test(read("CHANGELOG.md"))) {
+      mismatches.push([
+        "CHANGELOG.md",
+        `missing ## [${sourceVersion}] heading`,
+      ]);
+    }
   }
 
   if (mismatches.length > 0) {
@@ -115,27 +181,34 @@ function checkVersions() {
 if (process.argv[2] === undefined) {
   checkVersions();
 } else {
-  write("VERSION", `${version}\n`);
-  replaceExactly("package.json", /("version": ")[^"]+(",)/, `$1${version}$2`);
-  replaceExactly(
-    "src-tauri/Cargo.toml",
-    /(^version = ")[^"]+("$)/m,
-    `$1${version}$2`,
-  );
-  replaceExactly(
-    "src-tauri/tauri.conf.json",
-    /("version": ")[^"]+(",)/,
-    `$1${version}$2`,
-  );
-  replaceExactly(
-    "src-tauri/Cargo.lock",
-    /(\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = ")[^"]+/,
-    `$1${version}`,
-  );
-  write(
-    "src/version.ts",
-    `// SPDX-FileCopyrightText: 2026 Game Buddy\n// SPDX-License-Identifier: AGPL-3.0-only\n\n// Generated by pnpm version:set. Do not edit.\nexport const APP_VERSION = "${version}";\n`,
-  );
+  const plans = [
+    planWrite("VERSION", `${version}\n`),
+    planReplacement(
+      "package.json",
+      /("version": ")[^"]+(",)/,
+      `$1${version}$2`,
+    ),
+    planReplacement(
+      "src-tauri/Cargo.toml",
+      /(^version = ")[^"]+("$)/m,
+      `$1${version}$2`,
+    ),
+    planReplacement(
+      "src-tauri/tauri.conf.json",
+      /("version": ")[^"]+(",)/,
+      `$1${version}$2`,
+    ),
+    planReplacement(
+      "src-tauri/Cargo.lock",
+      /(\[\[package\]\]\r?\nname = "gganbu-app-bridge"\r?\nversion = ")[^"]+/,
+      `$1${version}`,
+    ),
+    planWrite(
+      "src/version.ts",
+      `// SPDX-FileCopyrightText: 2026 Game Buddy\n// SPDX-License-Identifier: AGPL-3.0-only\n\n// Generated by pnpm version:set. Do not edit.\nexport const APP_VERSION = "${version}";\n`,
+    ),
+  ];
+  applyPlans(plans);
   console.log(`Updated application version to ${version}`);
-  checkVersions();
+  checkVersions({ requireChangelog: false });
 }

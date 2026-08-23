@@ -100,7 +100,7 @@ fn system_executor() -> Arc<dyn KeyboardExecutor> {
     if is_wayland_session() {
         Arc::new(WaylandPortalKeyboardExecutor::new())
     } else {
-        Arc::new(X11KeyboardExecutor)
+        Arc::new(X11KeyboardExecutor::new())
     }
 }
 
@@ -219,8 +219,50 @@ fn send_windows_key(key: WindowsScanCode, released: bool) -> Result<(), Executio
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug)]
-struct X11KeyboardExecutor;
+struct X11KeyboardExecutor {
+    connection: Mutex<Option<Arc<x11rb::rust_connection::RustConnection>>>,
+}
+
+#[cfg(target_os = "linux")]
+impl X11KeyboardExecutor {
+    fn new() -> Self {
+        Self {
+            connection: Mutex::new(None),
+        }
+    }
+
+    fn connection(&self) -> Result<Arc<x11rb::rust_connection::RustConnection>, ExecutionError> {
+        let mut cached = self
+            .connection
+            .lock()
+            .expect("X11 connection lock poisoned");
+        if let Some(connection) = cached.as_ref() {
+            return Ok(Arc::clone(connection));
+        }
+        let (connection, _) = x11rb::connect(None).map_err(|error| {
+            let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+            if session.eq_ignore_ascii_case("wayland") {
+                ExecutionError::new(format!(
+                    "could not connect to XWayland through DISPLAY; native Wayland input injection is unsupported: {error}"
+                ))
+            } else {
+                ExecutionError::new(format!(
+                    "could not connect to the X11 display; check DISPLAY and XTEST permissions: {error}"
+                ))
+            }
+        })?;
+        let connection = Arc::new(connection);
+        *cached = Some(Arc::clone(&connection));
+        Ok(connection)
+    }
+
+    fn invalidate_connection(&self) {
+        self.connection
+            .lock()
+            .expect("X11 connection lock poisoned")
+            .take();
+    }
+}
 
 #[cfg(target_os = "linux")]
 fn is_wayland_session() -> bool {
@@ -453,18 +495,7 @@ impl KeyboardExecutor for X11KeyboardExecutor {
             .map(|scan_code| direct_input_to_x11_keycode(*scan_code))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let (connection, _) = x11rb::connect(None).map_err(|error| {
-            let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-            if session.eq_ignore_ascii_case("wayland") {
-                ExecutionError::new(format!(
-                    "could not connect to XWayland through DISPLAY; native Wayland input injection is unsupported: {error}"
-                ))
-            } else {
-                ExecutionError::new(format!(
-                    "could not connect to the X11 display; check DISPLAY and XTEST permissions: {error}"
-                ))
-            }
-        })?;
+        let connection = self.connection()?;
 
         let mut pressed = Vec::with_capacity(x11_key_codes.len());
         let press_result = (|| {
@@ -507,6 +538,9 @@ impl KeyboardExecutor for X11KeyboardExecutor {
             });
         }
 
+        if press_result.is_err() || release_error.is_some() {
+            self.invalidate_connection();
+        }
         press_result?;
         if let Some(error) = release_error {
             return Err(error);

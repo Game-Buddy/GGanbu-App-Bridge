@@ -238,9 +238,7 @@ export default function App() {
     ? "UNAVAILABLE"
     : keybindings
       ? displayPresetName(keybindings.source)
-      : mappingBusy
-        ? "LOADING…"
-        : "LOADING…";
+      : "LOADING…";
   const keyMappingTone =
     keyMappingState === "DEFAULT"
       ? "default"
@@ -555,16 +553,7 @@ export default function App() {
                       <span className="summary-label">RESOLVED</span>
                       <strong>{keybindings.bindings} mappings</strong>
                     </div>
-                    {/*<div>*/}
-                    {/*  <span className="summary-label">CHAIN</span>*/}
-                    {/*  <strong>{keybindings.files.length} files</strong>*/}
-                    {/*</div>*/}
                   </div>
-                  {/*<p className="mapping-output">*/}
-                  {/*  Effective mappings are saved to{" "}*/}
-                  {/*  <code>{keybindings.output}</code>. Child presets override*/}
-                  {/*  parent entries.*/}
-                  {/*</p>*/}
                   <div className="mapping-table-wrap">
                     <table className="mapping-table">
                       <thead>

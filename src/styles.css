@@ -95,7 +95,7 @@ button:focus-visible {
   background: transparent;
   font-size: 12px;
   text-align: left;
-  cursor: default;
+  cursor: pointer;
 }
 .nav-item:not(.nav-item--active):hover {
   background: #192124;

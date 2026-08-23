@@ -290,48 +290,46 @@ pub async fn resolve_action(
 
     let received_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let mut bindings = Vec::with_capacity(request.actions.len());
+    let mut attempts = Vec::with_capacity(request.actions.len());
     for (index, action) in request.actions.iter().enumerate() {
         let resolution = match state.action_resolver.resolve(action) {
             Ok(resolution) => resolution,
             Err(ResolveError::UnknownAction) => continue,
             Err(ResolveError::CatalogUnavailable) => return Err(ApiError::ExecutionFailed),
             Err(ResolveError::UnsupportedPlatform) => {
-                state.bridge.record_action_attempt(
-                    ActionAttempt {
-                        action: action.clone(),
-                        request_id: format!("resolve-{index}"),
-                        label: None,
-                        platform: state.action_resolver.platform(),
-                        shortcut: None,
-                        validation: ActionValidation::Rejected,
-                        validation_message:
-                            "Rejected: this operating system has no action mapping.".to_owned(),
-                        executed: false,
-                        received_at: received_at.clone(),
-                        sequence: 0,
-                    },
-                    &state.publisher,
-                );
+                attempts.push(ActionAttempt {
+                    action: action.clone(),
+                    request_id: format!("resolve-{index}"),
+                    label: None,
+                    platform: state.action_resolver.platform(),
+                    shortcut: None,
+                    validation: ActionValidation::Rejected,
+                    validation_message: "Rejected: this operating system has no action mapping."
+                        .to_owned(),
+                    executed: false,
+                    received_at: received_at.clone(),
+                    sequence: 0,
+                });
+                state
+                    .bridge
+                    .record_action_attempts(attempts, &state.publisher);
                 return Err(ApiError::UnsupportedPlatform);
             }
         };
 
-        state.bridge.record_action_attempt(
-            ActionAttempt {
-                action: action.clone(),
-                request_id: format!("resolve-{index}"),
-                label: Some(resolution.label.to_owned()),
-                platform: resolution.platform,
-                shortcut: Some(resolution.shortcut.clone()),
-                validation: ActionValidation::Accepted,
-                validation_message: "Preview resolved; keyboard execution was not requested."
-                    .to_owned(),
-                executed: false,
-                received_at: received_at.clone(),
-                sequence: 0,
-            },
-            &state.publisher,
-        );
+        attempts.push(ActionAttempt {
+            action: action.clone(),
+            request_id: format!("resolve-{index}"),
+            label: Some(resolution.label.to_owned()),
+            platform: resolution.platform,
+            shortcut: Some(resolution.shortcut.clone()),
+            validation: ActionValidation::Accepted,
+            validation_message: "Preview resolved; keyboard execution was not requested."
+                .to_owned(),
+            executed: false,
+            received_at: received_at.clone(),
+            sequence: 0,
+        });
         bindings.push(ActionBindingResponse {
             action: resolution.action,
             label: resolution.label,
@@ -339,6 +337,10 @@ pub async fn resolve_action(
             binding: resolution.shortcut,
         });
     }
+
+    state
+        .bridge
+        .record_action_attempts(attempts, &state.publisher);
 
     let response =
         encrypt_secure_payload(&state, &session_id, &ActionResolvedResponse { bindings })?;

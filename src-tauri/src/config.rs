@@ -8,10 +8,15 @@ use tauri::{Manager, path::BaseDirectory};
 use url::Url;
 
 pub const ALLOWED_ORIGINS_ENV: &str = "GGANBU_BRIDGE_ALLOWED_ORIGINS";
+/// Compile-time flag name used to select the release origin policy.
+/// Set `GGANBU_RELEASE_BUILD` when compiling a release binary; runtime
+/// environment changes cannot switch a binary between release and development
+/// origin policies.
 pub const RELEASE_BUILD_ENV: &str = "GGANBU_RELEASE_BUILD";
 pub const DEFAULT_ORIGINS: [&str; 2] = ["http://localhost:5173", "http://127.0.0.1:5173"];
 pub const RELEASE_ORIGINS: [&str; 1] = ["https://gganbu.app"];
 
+/// Returns whether this binary was compiled with the release origin policy.
 pub(crate) fn is_release_build() -> bool {
     option_env!("GGANBU_RELEASE_BUILD").is_some()
 }
