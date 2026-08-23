@@ -34,6 +34,9 @@ Development and local builds read `GGANBU_BRIDGE_ALLOWED_ORIGINS` from `.env` as
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
+The Tauri source layout, trust boundaries, and request flow are documented in
+[docs/architecture.md](./docs/architecture.md).
+
 ## Repository workflow
 
 - `main` is the default branch and the stable release branch.
