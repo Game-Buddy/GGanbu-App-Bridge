@@ -16,32 +16,64 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  detect-application:
-    name: Detect application source
+  detect-codeql-changes:
+    name: Detect CodeQL changes
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
-      available: ${{ steps.detect.outputs.available }}
+      needed: ${{ steps.detect.outputs.needed }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Detect JavaScript or TypeScript source
+      - name: Detect application source changes
         id: detect
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if find src src-tauri -type f \( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.rs' \) -print -quit 2>/dev/null | grep -q .; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            schedule)
+              echo "needed=true" >> "$GITHUB_OUTPUT"
+              echo "CodeQL scheduled scan will analyze the full repository."
+              exit 0
+              ;;
+            pull_request)
+              git fetch --no-tags origin "$BASE_SHA"
+              changed_files="$(git diff --name-only "$BASE_SHA" HEAD)"
+              ;;
+            push)
+              if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+                changed_files='initial push'
+              else
+                changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+              fi
+              ;;
+            *)
+              changed_files='unknown event'
+              ;;
+          esac
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(src/|src-tauri/|scripts/|package\.json$|pnpm-lock\.yaml$|eslint\.config\.js$|index\.html$|tsconfig[^/]*$|vite\.config[^/]*$)'; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "CodeQL remains disabled until JavaScript or TypeScript source is present."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "CodeQL skipped because no JavaScript, TypeScript, Rust, or build configuration changed."
           fi
 
   analyze:
     name: JavaScript, TypeScript, and Rust
-    needs: detect-application
+    needs: detect-codeql-changes
+    if: needs.detect-codeql-changes.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -53,19 +85,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Skip CodeQL when application source is unavailable
-        if: needs.detect-application.outputs.available != 'true'
-        run: echo "CodeQL remains disabled until JavaScript or TypeScript source is present."
-
       - name: Initialize CodeQL
-        if: needs.detect-application.outputs.available == 'true'
         uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           languages: javascript-typescript, rust
           build-mode: none
 
       - name: Analyze
-        if: needs.detect-application.outputs.available == 'true'
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           category: /language:javascript-typescript-rust

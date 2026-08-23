@@ -209,14 +209,12 @@ export default function App() {
       )
     : 0;
 
-  const loadMappings = async (path?: string) => {
+  const loadMappings = async () => {
     setMappingBusy(true);
     setMappingError(null);
     try {
       setKeybindings(
-        await invoke<KeybindingPreview>("load_keybindings", {
-          path: path ?? null,
-        }),
+        await invoke<KeybindingPreview>("load_default_keybindings"),
       );
     } catch (error) {
       setMappingError(
@@ -519,17 +517,21 @@ export default function App() {
                     className="add-device-button"
                     disabled={mappingBusy}
                     onClick={async () => {
+                      setMappingBusy(true);
+                      setMappingError(null);
                       try {
-                        const path = await invoke<string | null>(
+                        const selected = await invoke<KeybindingPreview | null>(
                           "pick_keybindings_file",
                         );
-                        if (path) void loadMappings(path);
+                        if (selected) setKeybindings(selected);
                       } catch (error) {
                         setMappingError(
                           error instanceof Error
                             ? error.message
                             : String(error),
                         );
+                      } finally {
+                        setMappingBusy(false);
                       }
                     }}
                   >

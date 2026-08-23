@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove extracted War Thunder keybinding presets from the repository and desktop packages.
 
+## [0.4.7] - 2026-08-23
+
+### Added
+
+- Add focused Tauri commands, application modules, mappings, and architecture tests.
+
+### Changed
+
+- Refactor bridge, server, keyboard, pairing, and security state handling into clearer Rust modules.
+- Gate signed releases on successful CI and CodeQL, then tag and publish only after artifact signing.
+
 ## [0.4.6] - 2026-08-23
 
 ### Fixed
@@ -86,7 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.6...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.3...v0.4.4

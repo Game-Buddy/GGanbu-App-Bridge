@@ -1,0 +1,3 @@
+interface:
+  display_name: "Tauri Rust Architect"
+  short_description: "Secure, high-performance Rust and Tauri architecture and implementation"

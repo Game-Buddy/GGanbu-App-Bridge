@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Game Buddy
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use serde::Serialize;
 
@@ -86,6 +86,7 @@ struct BridgeStateInner {
 #[derive(Clone, Debug)]
 pub struct SharedBridgeState {
     inner: Arc<RwLock<BridgeStateInner>>,
+    pairing_transition: Arc<Mutex<()>>,
 }
 
 pub type StatePublisher = Arc<dyn Fn(BridgeSnapshot) + Send + Sync + 'static>;
@@ -111,7 +112,17 @@ impl SharedBridgeState {
                 next_sequence: 1,
                 next_action_sequence: 1,
             })),
+            pairing_transition: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Serializes pairing-state transitions with the publication of their
+    /// corresponding UI state. Callers must hold this guard across both the
+    /// security mutation and all resulting publications.
+    pub fn pairing_transition(&self) -> MutexGuard<'_, ()> {
+        self.pairing_transition
+            .lock()
+            .expect("pairing transition lock poisoned")
     }
 
     pub fn snapshot(&self) -> BridgeSnapshot {
@@ -254,3 +265,7 @@ impl SharedBridgeState {
 pub fn noop_publisher() -> StatePublisher {
     Arc::new(|_| {})
 }
+
+#[cfg(test)]
+#[path = "tests/state.rs"]
+mod tests;

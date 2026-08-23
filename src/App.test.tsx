@@ -8,6 +8,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { Event, EventCallback } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +39,22 @@ const baseSnapshot: BridgeSnapshot = {
   activePairing: null,
   devices: [],
   activeConnectionCount: 0,
+};
+
+const defaultKeybindings = {
+  source: "/assets/config/hotkeys/hotkey.keyboard_shooter_ver3.blkx",
+  output: "/data/user-keybindings.json",
+  files: ["default.blkx"],
+  bindings: 1,
+  hotkeys: [{ action: "ID_FIRE", binding: "F" }],
+};
+
+const customKeybindings = {
+  source: "/home/user/custom.blkx",
+  output: "/data/user-keybindings.json",
+  files: ["custom.blkx"],
+  bindings: 1,
+  hotkeys: [{ action: "ID_FIRE", binding: "G" }],
 };
 
 function repeatedAction(
@@ -361,5 +378,101 @@ describe("GGanbu Bridge status screen", () => {
 
     view.unmount();
     expect(tauri.unlisten).toHaveBeenCalledOnce();
+  });
+
+  it("updates the mapping preview after a keybinding file is selected", async () => {
+    tauri.invoke.mockImplementation((command: string) => {
+      if (command === "get_bridge_snapshot")
+        return Promise.resolve(baseSnapshot);
+      if (command === "get_host_address") return Promise.resolve("127.0.0.1");
+      if (command === "load_default_keybindings") {
+        return Promise.resolve(defaultKeybindings);
+      }
+      if (command === "pick_keybindings_file") {
+        return Promise.resolve(customKeybindings);
+      }
+      return Promise.resolve(baseSnapshot);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mappings" }));
+    const mappings = within(
+      screen.getByRole("region", { name: "Mappings tab" }),
+    );
+    expect(await mappings.findByText("DEFAULT")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Upload your Controls" }),
+    );
+
+    expect(
+      await mappings.findByText("CUSTOM (custom.blkx)"),
+    ).toBeInTheDocument();
+    expect(tauri.invoke).toHaveBeenCalledWith("pick_keybindings_file");
+  });
+
+  it("keeps the current mapping preview when file selection is cancelled", async () => {
+    tauri.invoke.mockImplementation((command: string) => {
+      if (command === "get_bridge_snapshot")
+        return Promise.resolve(baseSnapshot);
+      if (command === "get_host_address") return Promise.resolve("127.0.0.1");
+      if (command === "load_default_keybindings") {
+        return Promise.resolve(defaultKeybindings);
+      }
+      if (command === "pick_keybindings_file") return Promise.resolve(null);
+      return Promise.resolve(baseSnapshot);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mappings" }));
+    const mappings = within(
+      screen.getByRole("region", { name: "Mappings tab" }),
+    );
+    expect(await mappings.findByText("DEFAULT")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Upload your Controls" }),
+    );
+    await waitFor(() =>
+      expect(tauri.invoke).toHaveBeenCalledWith("pick_keybindings_file"),
+    );
+
+    expect(mappings.getByText("DEFAULT")).toBeInTheDocument();
+    expect(
+      mappings.queryByText("CUSTOM (custom.blkx)"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows picker errors and clears the mapping busy state", async () => {
+    const pickerError = new Error("invalid keybinding file");
+    tauri.invoke.mockImplementation((command: string) => {
+      if (command === "get_bridge_snapshot")
+        return Promise.resolve(baseSnapshot);
+      if (command === "get_host_address") return Promise.resolve("127.0.0.1");
+      if (command === "load_default_keybindings") {
+        return Promise.resolve(defaultKeybindings);
+      }
+      if (command === "pick_keybindings_file")
+        return Promise.reject(pickerError);
+      return Promise.resolve(baseSnapshot);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Mappings" }));
+    const mappings = within(
+      screen.getByRole("region", { name: "Mappings tab" }),
+    );
+    await mappings.findByText("DEFAULT");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Upload your Controls" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "invalid keybinding file",
+    );
+    expect(
+      screen.getByRole("button", { name: "Upload your Controls" }),
+    ).not.toBeDisabled();
   });
 });
