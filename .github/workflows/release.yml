@@ -2,7 +2,7 @@ name: Signed desktop release
 
 on:
   workflow_run:
-    workflows: ["Checks and desktop builds", "CodeQL"]
+    workflows: ["CodeQL"]
     types: [completed]
     branches: [main]
 
@@ -22,7 +22,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       actions: read
     steps:
@@ -32,20 +32,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for workflow in "Checks and desktop builds" "CodeQL"; do
+          for attempt in {1..48}; do
             conclusion="$(gh run list \
-              --workflow "$workflow" \
+              --workflow "Checks and desktop builds" \
               --commit "$RELEASE_SHA" \
               --event push \
               --status completed \
               --limit 20 \
               --json conclusion \
               --jq '.[0].conclusion // empty')"
-            if [[ "$conclusion" != "success" ]]; then
-              echo "$workflow has not succeeded for $RELEASE_SHA" >&2
-              exit 1
-            fi
+            case "$conclusion" in
+              success)
+                exit 0
+                ;;
+              failure|cancelled)
+                echo "Checks and desktop builds ended with $conclusion for $RELEASE_SHA" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
           done
+          echo "Timed out waiting for Checks and desktop builds for $RELEASE_SHA" >&2
+          exit 1
 
   preflight:
     name: Release preflight
@@ -133,6 +141,7 @@ jobs:
   build-linux:
     name: Linux AppImage
     needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -172,7 +181,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
-          package-manager-cache: false
+          cache: pnpm
 
       - name: Check release version
         shell: bash
@@ -190,6 +199,12 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.94.1
+
+      - name: Restore Rust release build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: release-linux-x86_64
 
       - name: Fetch locked Rust dependencies
         run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
@@ -223,6 +238,7 @@ jobs:
   sign-linux:
     name: Sign Linux AppImage
     needs: [preflight, build-linux]
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
@@ -306,6 +322,7 @@ jobs:
   build-windows:
     name: Windows NSIS installer
     needs: preflight
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -330,7 +347,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
-          package-manager-cache: false
+          cache: pnpm
 
       - name: Check release version
         shell: pwsh
@@ -346,6 +363,12 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.94.1
+
+      - name: Restore Rust release build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: release-windows-x86_64
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
@@ -363,6 +386,7 @@ jobs:
   sign-windows:
     name: Sign Windows NSIS installer
     needs: [preflight, build-windows]
+    if: needs.preflight.outputs.should_release == 'true'
     runs-on: windows-2025
     timeout-minutes: 20
     environment: release
