@@ -32,7 +32,6 @@ pub(crate) fn pairing_status(security: &SecurityState) -> PairingStatusResponse 
         };
     };
     if session.is_expired(Utc::now()) {
-        security.clear_pairing_and_code();
         return PairingStatusResponse {
             active: false,
             code: None,
@@ -45,6 +44,12 @@ pub(crate) fn pairing_status(security: &SecurityState) -> PairingStatusResponse 
         code: security.pairing_code(),
         expires_at: Some(session.expires_at),
         failed_attempts: session.failed_attempts,
+    }
+}
+
+pub(crate) fn publish_pairing_status(app: &tauri::AppHandle, status: PairingStatusResponse) {
+    if let Err(error) = app.emit("pairing-status-changed", status) {
+        tracing::warn!(%error, "could not publish pairing status update");
     }
 }
 
@@ -68,7 +73,7 @@ pub(crate) fn start_pairing(
         .map_err(|_| "a pairing session is already active".to_owned())?;
     let status = pairing_status(&security);
     publish_security_snapshot(&app, &bridge, &security);
-    let _ = app.emit("pairing-status-changed", status.clone());
+    publish_pairing_status(&app, status.clone());
     Ok(status)
 }
 
@@ -80,12 +85,20 @@ pub(crate) fn cancel_pairing(
 ) {
     security.clear_pairing_and_code();
     publish_security_snapshot(&app, &bridge, &security);
-    let _ = app.emit("pairing-status-changed", pairing_status(&security));
+    publish_pairing_status(&app, pairing_status(&security));
 }
 
 #[tauri::command]
 pub(crate) fn get_pairing_status(
+    app: tauri::AppHandle,
+    bridge: tauri::State<'_, SharedBridgeState>,
     security: tauri::State<'_, SecurityState>,
 ) -> PairingStatusResponse {
-    pairing_status(&security)
+    let expired = security.clear_expired_pairing(Utc::now());
+    let status = pairing_status(&security);
+    if expired {
+        publish_security_snapshot(&app, &bridge, &security);
+        publish_pairing_status(&app, status.clone());
+    }
+    status
 }

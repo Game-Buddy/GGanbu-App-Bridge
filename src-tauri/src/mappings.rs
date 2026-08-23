@@ -19,6 +19,7 @@ const MAX_KEYBINDING_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_KEYBINDING_FILES: usize = 128;
 const MAX_KEYBINDING_DEPTH: usize = 32;
 const MAX_KEYBINDINGS: usize = 20_000;
+const MAX_KEYBINDING_PREVIEW_ROWS: usize = 500;
 
 #[derive(RustEmbed)]
 #[folder = "assets/"]
@@ -40,6 +41,39 @@ pub(crate) struct KeybindingPreview {
 struct KeybindingRow {
     action: String,
     binding: String,
+}
+
+fn keybinding_rows(hotkeys: &serde_json::Map<String, serde_json::Value>) -> Vec<KeybindingRow> {
+    hotkeys
+        .iter()
+        .take(MAX_KEYBINDING_PREVIEW_ROWS)
+        .map(|(action, value)| {
+            let binding = value.get("keyboardKey").or_else(|| {
+                value
+                    .as_array()
+                    .and_then(|a| a.iter().find(|entry| entry.get("keyboardKey").is_some()))
+                    .and_then(|v| v.get("keyboardKey"))
+            });
+            let display = binding.and_then(|binding| {
+                let codes = match binding {
+                    serde_json::Value::Number(number) => {
+                        vec![number.as_u64()? as u16]
+                    }
+                    serde_json::Value::Array(values) => values
+                        .iter()
+                        .filter_map(serde_json::Value::as_u64)
+                        .map(|code| code as u16)
+                        .collect::<Vec<_>>(),
+                    _ => return None,
+                };
+                Some(actions::display_key_codes(&codes))
+            });
+            KeybindingRow {
+                action: action.clone(),
+                binding: display.unwrap_or_else(|| "—".to_owned()),
+            }
+        })
+        .collect()
 }
 
 fn parse_blk_value(raw: &str) -> serde_json::Value {
@@ -337,35 +371,7 @@ pub(crate) fn load_keybindings_from_path(
     )
     .map_err(|e| e.to_string())?;
     actions::set_user_catalog(&serde_json::to_string(&result).map_err(|e| e.to_string())?)?;
-    let rows = hotkeys
-        .iter()
-        .map(|(action, value)| {
-            let binding = value.get("keyboardKey").or_else(|| {
-                value
-                    .as_array()
-                    .and_then(|a| a.iter().find(|entry| entry.get("keyboardKey").is_some()))
-                    .and_then(|v| v.get("keyboardKey"))
-            });
-            let display = binding.and_then(|binding| {
-                let codes = match binding {
-                    serde_json::Value::Number(number) => {
-                        vec![number.as_u64()? as u16]
-                    }
-                    serde_json::Value::Array(values) => values
-                        .iter()
-                        .filter_map(serde_json::Value::as_u64)
-                        .map(|code| code as u16)
-                        .collect::<Vec<_>>(),
-                    _ => return None,
-                };
-                Some(actions::display_key_codes(&codes))
-            });
-            KeybindingRow {
-                action: action.clone(),
-                binding: display.unwrap_or_else(|| "—".to_owned()),
-            }
-        })
-        .collect();
+    let rows = keybinding_rows(&hotkeys);
     Ok(KeybindingPreview {
         source: source.display().to_string(),
         output: output.display().to_string(),

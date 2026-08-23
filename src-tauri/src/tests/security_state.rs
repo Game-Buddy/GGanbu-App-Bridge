@@ -35,6 +35,31 @@ fn pairing_is_cancelled_after_five_failures() {
 }
 
 #[test]
+fn expired_pairing_can_be_cleared_without_touching_a_new_pairing() {
+    let state = SecurityState::default();
+    let now = Utc::now();
+    let expired = PairingSession::new("expired".into(), vec![1], now - Duration::seconds(1));
+    assert!(
+        state
+            .start_pairing_with_code(expired, "12345678".into())
+            .is_ok()
+    );
+
+    assert!(state.clear_expired_pairing(now));
+    assert!(state.pairing().is_none());
+    assert!(state.pairing_code().is_none());
+
+    let active = PairingSession::new("active".into(), vec![2], now + Duration::minutes(1));
+    assert!(
+        state
+            .start_pairing_with_code(active, "87654321".into())
+            .is_ok()
+    );
+    assert!(!state.clear_expired_pairing(now));
+    assert_eq!(state.pairing().unwrap().pairing_id, "active");
+}
+
+#[test]
 fn replay_counters_and_device_session_replacement_are_enforced() {
     let state = SecurityState::default();
     let now = Utc::now();

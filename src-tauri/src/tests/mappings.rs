@@ -48,6 +48,17 @@ fn rejects_oversized_keybinding_files_before_parsing() {
 }
 
 #[test]
+fn keybinding_preview_rows_are_bounded() {
+    let hotkeys = (0..=MAX_KEYBINDING_PREVIEW_ROWS)
+        .map(|index| (format!("ACTION_{index}"), serde_json::json!({})))
+        .collect::<serde_json::Map<_, _>>();
+    let rows = keybinding_rows(&hotkeys);
+
+    assert_eq!(rows.len(), MAX_KEYBINDING_PREVIEW_ROWS);
+    assert_eq!(hotkeys.len(), MAX_KEYBINDING_PREVIEW_ROWS + 1);
+}
+
+#[test]
 fn rejects_base_preset_paths_that_escape_the_preset_root() {
     let path = std::env::temp_dir().join(format!(
         "gganbu-keybindings-unsafe-base-{}-{}.blkx",

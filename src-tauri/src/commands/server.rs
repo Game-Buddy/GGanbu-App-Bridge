@@ -10,7 +10,7 @@ use std::{
     },
 };
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -21,7 +21,10 @@ use crate::{
     state::{SharedBridgeState, StatePublisher},
 };
 
-use super::{bridge::state_publisher, pairing::pairing_status};
+use super::{
+    bridge::state_publisher,
+    pairing::{pairing_status, publish_pairing_status},
+};
 
 const SERVER_ADDRESS: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 53177);
@@ -168,7 +171,7 @@ pub(crate) fn stop_server(
 ) {
     security.clear_pairing_and_code();
     super::bridge::publish_security_snapshot(&app, &bridge, &security);
-    let _ = app.emit("pairing-status-changed", pairing_status(&security));
+    publish_pairing_status(&app, pairing_status(&security));
     control.stop();
 }
 

@@ -3,7 +3,7 @@
 
 use super::{ConnectionSession, DeviceRecord, PairingSession};
 use super::{DeviceStore, OpaqueProtocol, StorageError};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, RwLock},
@@ -258,6 +258,20 @@ impl SecurityState {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         inner.pairing = None;
         inner.pairing_code = None;
+    }
+
+    pub fn clear_expired_pairing(&self, now: DateTime<Utc>) -> bool {
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        if !inner
+            .pairing
+            .as_ref()
+            .is_some_and(|pairing| pairing.is_expired(now))
+        {
+            return false;
+        }
+        inner.pairing = None;
+        inner.pairing_code = None;
+        true
     }
 
     pub fn record_pairing_failure(&self) -> bool {
