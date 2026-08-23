@@ -126,11 +126,9 @@ impl SecurityState {
         device: DeviceRecord,
     ) -> Result<bool, StorageError> {
         let mut inner = self.inner.write().expect("security state lock poisoned");
-        if inner
-            .pairing
-            .as_ref()
-            .is_none_or(|pairing| pairing.pairing_id != pairing_id)
-        {
+        if inner.pairing.as_ref().is_none_or(|pairing| {
+            pairing.pairing_id != pairing_id || pairing.is_expired(Utc::now())
+        }) {
             return Ok(false);
         }
         let mut devices = inner.devices.clone();

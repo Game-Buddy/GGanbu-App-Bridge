@@ -96,6 +96,24 @@ fn cancelled_registration_cannot_persist_or_clear_a_new_pairing() {
 }
 
 #[test]
+fn expired_matching_pairing_cannot_persist_a_device() {
+    let state = SecurityState::default();
+    let now = Utc::now();
+    let expired = PairingSession::new("expired".into(), vec![1], now - Duration::seconds(1));
+    assert!(state.start_pairing(expired).is_ok());
+
+    assert!(
+        !state
+            .add_device_if_pairing_matches(
+                "expired",
+                DeviceRecord::new("device".into(), "Browser".into(), vec![2], now),
+            )
+            .unwrap()
+    );
+    assert!(state.devices().is_empty());
+}
+
+#[test]
 fn replay_counters_and_device_session_replacement_are_enforced() {
     let state = SecurityState::default();
     let now = Utc::now();
