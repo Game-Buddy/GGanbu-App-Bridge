@@ -5,6 +5,13 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const tauriCli = resolve(
+  root,
+  "node_modules",
+  "@tauri-apps",
+  "cli",
+  "tauri.js",
+);
 const args = process.argv.slice(2);
 const separatorIndex = args.indexOf("--");
 
@@ -12,23 +19,15 @@ const separatorIndex = args.indexOf("--");
 if (separatorIndex >= 0) {
   args.splice(separatorIndex, 1);
 }
-const result =
+const command =
   process.platform === "win32"
-    ? spawnSync(
-        process.env.ComSpec ?? "cmd.exe",
-        [
-          "/d",
-          "/s",
-          "/c",
-          resolve(root, "node_modules", ".bin", "tauri.cmd"),
-          ...args,
-        ],
-        { cwd: root, stdio: "inherit" },
-      )
-    : spawnSync(resolve(root, "node_modules", ".bin", "tauri"), args, {
-        cwd: root,
-        stdio: "inherit",
-      });
+    ? process.execPath
+    : resolve(root, "node_modules", ".bin", "tauri");
+const commandArgs = process.platform === "win32" ? [tauriCli, ...args] : args;
+const result = spawnSync(command, commandArgs, {
+  cwd: root,
+  stdio: "inherit",
+});
 
 if (result.error) {
   throw result.error;
