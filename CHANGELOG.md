@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-08-23
+
+### Fixed
+
+- Select the x64 Windows SDK signing tool, bind signing to the imported certificate, and verify the installer signature before publishing.
+- Document the trusted-main release trigger and keep pinned CodeQL action metadata exact.
+
 ## [0.4.8] - 2026-08-23
 
 ### Fixed
