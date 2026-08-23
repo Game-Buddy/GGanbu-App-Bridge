@@ -68,6 +68,7 @@ pub(crate) fn start_pairing(
         .create_password_file(code.as_bytes(), pairing_id.as_bytes())
         .map_err(|_| "unable to initialize pairing".to_owned())?;
     let session = PairingSession::new(pairing_id, record, expires_at);
+    let _pairing_transition = bridge.pairing_transition();
     security
         .start_pairing_with_code(session, code)
         .map_err(|_| "a pairing session is already active".to_owned())?;
@@ -83,6 +84,7 @@ pub(crate) fn cancel_pairing(
     bridge: tauri::State<'_, SharedBridgeState>,
     security: tauri::State<'_, SecurityState>,
 ) {
+    let _pairing_transition = bridge.pairing_transition();
     security.clear_pairing_and_code();
     publish_security_snapshot(&app, &bridge, &security);
     publish_pairing_status(&app, pairing_status(&security));
@@ -94,6 +96,7 @@ pub(crate) fn get_pairing_status(
     bridge: tauri::State<'_, SharedBridgeState>,
     security: tauri::State<'_, SecurityState>,
 ) -> PairingStatusResponse {
+    let _pairing_transition = bridge.pairing_transition();
     let expired = security.clear_expired_pairing(Utc::now());
     let status = pairing_status(&security);
     if expired {

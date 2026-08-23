@@ -430,14 +430,20 @@ fn encode_pairing_message(message: &[u8]) -> String {
 }
 
 fn publish_security_snapshot(state: &ProtocolModule) {
+    let _pairing_transition = state.bridge.pairing_transition();
+    publish_security_snapshot_locked(state);
+}
+
+fn publish_security_snapshot_locked(state: &ProtocolModule) {
     state
         .bridge
         .set_security_snapshot(&state.security, &state.publisher);
 }
 
 fn pairing_authentication_failed(state: &ProtocolModule) -> ApiError {
+    let _pairing_transition = state.bridge.pairing_transition();
     state.security.record_pairing_failure();
-    publish_security_snapshot(state);
+    publish_security_snapshot_locked(state);
     ApiError::PairingAuthenticationFailed
 }
 
@@ -447,13 +453,14 @@ fn device_authentication_failed(state: &ProtocolModule, device_id: &str) -> ApiE
 }
 
 fn active_pairing(state: &ProtocolModule) -> Result<crate::security::PairingSession, ApiError> {
+    let _pairing_transition = state.bridge.pairing_transition();
     let pairing = state
         .security
         .pairing()
         .ok_or(ApiError::PairingUnavailable)?;
     if pairing.is_expired(Utc::now()) {
         state.security.clear_pairing_and_code();
-        publish_security_snapshot(state);
+        publish_security_snapshot_locked(state);
         return Err(ApiError::PairingUnavailable);
     }
     Ok(pairing)
@@ -625,8 +632,9 @@ pub async fn pairing_register_finish(
             device_id,
         },
     )?;
+    let _pairing_transition = state.bridge.pairing_transition();
     state.security.clear_pairing_and_code();
-    publish_security_snapshot(&state);
+    publish_security_snapshot_locked(&state);
     Ok(Json(response))
 }
 

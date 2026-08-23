@@ -169,6 +169,7 @@ pub(crate) fn stop_server(
     security: tauri::State<'_, SecurityState>,
     control: tauri::State<'_, ServerControl>,
 ) {
+    let _pairing_transition = bridge.pairing_transition();
     security.clear_pairing_and_code();
     super::bridge::publish_security_snapshot(&app, &bridge, &security);
     publish_pairing_status(&app, pairing_status(&security));
