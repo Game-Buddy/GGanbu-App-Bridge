@@ -48,7 +48,7 @@ MSIX = (SemVer major + 1).SemVer minor.SemVer patch.0
 1.2.3 -> 2.2.3.0
 ```
 
-This mapping remains monotonic across stable SemVer releases. Prerelease labels and build metadata do not create a distinct MSIX version; do not submit both a prerelease and stable build with the same numeric core to the same Store product.
+This mapping remains monotonic across stable SemVer releases. The MSIX workflow rejects prerelease versions because Store package versions cannot represent a prerelease without risking a collision with the later stable package. Submit stable versions to Partner Center.
 
 ## Local package validation
 
@@ -57,7 +57,7 @@ On Windows, after building the release executable and installing `winapp`, run:
 ```powershell
 pnpm tauri build --no-bundle
 pnpm msix:prepare
-winapp package target/msix/package `
+winapp pack target/msix/package `
   --manifest target/msix/package/Package.appxmanifest `
   --output target/msix/GGanbu-App-Bridge.msix `
   --skip-pri

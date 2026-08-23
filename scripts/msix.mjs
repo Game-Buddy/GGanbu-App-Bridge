@@ -52,6 +52,11 @@ export function semverToMsixVersion(version) {
   ) {
     throw new Error(`Invalid semantic version: ${version}`);
   }
+  if (match[4]) {
+    throw new Error(
+      `Prerelease version ${version} cannot be mapped to a unique MSIX version`,
+    );
+  }
 
   const parts = match.slice(1, 4).map(Number);
   const msixParts = [parts[0] + 1, parts[1], parts[2], 0];

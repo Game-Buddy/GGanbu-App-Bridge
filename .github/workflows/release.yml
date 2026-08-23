@@ -393,7 +393,7 @@ jobs:
           MSIX_FILENAME: ${{ steps.msix.outputs.msix_filename }}
         run: |
           $output = Join-Path "target/msix" $env:MSIX_FILENAME
-          winapp package "target/msix/package" `
+          winapp pack "target/msix/package" `
             --manifest "target/msix/package/Package.appxmanifest" `
             --output $output `
             --skip-pri `
@@ -402,7 +402,12 @@ jobs:
             throw "winapp failed to create the MSIX package"
           }
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $output).Hash.ToLowerInvariant()
-          "$hash  $env:MSIX_FILENAME" | Set-Content "target/msix/SHA256SUMS-windows-x86_64"
+          $checksum = "$hash  $env:MSIX_FILENAME`n"
+          [IO.File]::WriteAllText(
+            "target/msix/SHA256SUMS-windows-x86_64",
+            $checksum,
+            [Text.UTF8Encoding]::new($false)
+          )
 
       - name: Report Store identity status
         shell: pwsh
@@ -413,6 +418,7 @@ jobs:
             "MSIX uses the configured Partner Center identity and is ready for submission." >> $env:GITHUB_STEP_SUMMARY
           } else {
             "⚠️ MSIX uses development identity placeholders and must not be submitted to Partner Center." >> $env:GITHUB_STEP_SUMMARY
+            throw "Set MSIX_IDENTITY_NAME, MSIX_PUBLISHER, and MSIX_PUBLISHER_DISPLAY_NAME before releasing a Store package"
           }
 
       - name: Upload unsigned Store submission package

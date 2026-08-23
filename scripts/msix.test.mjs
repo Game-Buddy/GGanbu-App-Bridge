@@ -9,17 +9,20 @@ describe("MSIX version mapping", () => {
   it.each([
     ["0.5.0", "1.5.0.0"],
     ["1.2.3", "2.2.3.0"],
-    ["4.8.15-beta.2+build.7", "5.8.15.0"],
   ])("maps %s to %s", (version, expected) => {
     expect(semverToMsixVersion(version)).toBe(expected);
   });
 
-  it.each(["1.2", "v1.2.3", "1.2.3-01", "1.65536.0", "65535.0.0"])(
-    "rejects an unrepresentable version %s",
-    (version) => {
-      expect(() => semverToMsixVersion(version)).toThrow();
-    },
-  );
+  it.each([
+    "1.2",
+    "v1.2.3",
+    "1.2.3-01",
+    "1.2.3-beta.1+build.7",
+    "1.65536.0",
+    "65535.0.0",
+  ])("rejects an unrepresentable version %s", (version) => {
+    expect(() => semverToMsixVersion(version)).toThrow();
+  });
 });
 
 describe("MSIX manifest rendering", () => {
