@@ -60,6 +60,42 @@ fn expired_pairing_can_be_cleared_without_touching_a_new_pairing() {
 }
 
 #[test]
+fn cancelled_registration_cannot_persist_or_clear_a_new_pairing() {
+    let state = SecurityState::default();
+    let now = Utc::now();
+    let pairing = PairingSession::new("original".into(), vec![1], now + Duration::minutes(1));
+    assert!(state.start_pairing(pairing).is_ok());
+    assert!(state.set_registration_state("original", vec![2], "device".into(), "Browser".into(),));
+    let (registration_state, device_id, display_name) = state
+        .take_registration_state_for("original")
+        .expect("registration state should belong to the original pairing");
+    assert!(!registration_state.is_empty());
+
+    state.clear_pairing_and_code();
+    let replacement =
+        PairingSession::new("replacement".into(), vec![3], now + Duration::minutes(1));
+    assert!(state.start_pairing(replacement).is_ok());
+
+    assert!(
+        !state
+            .add_device_if_pairing_matches(
+                "original",
+                DeviceRecord::new(device_id, display_name, vec![4], now),
+            )
+            .unwrap()
+    );
+    assert!(!state.clear_pairing_if_matches("original"));
+    assert!(state.devices().is_empty());
+    assert_eq!(
+        state
+            .pairing()
+            .expect("replacement pairing should remain")
+            .pairing_id,
+        "replacement"
+    );
+}
+
+#[test]
 fn replay_counters_and_device_session_replacement_are_enforced() {
     let state = SecurityState::default();
     let now = Utc::now();

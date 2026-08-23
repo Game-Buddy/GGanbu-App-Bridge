@@ -119,6 +119,27 @@ impl SecurityState {
         inner.devices = devices;
         Ok(())
     }
+
+    pub fn add_device_if_pairing_matches(
+        &self,
+        pairing_id: &str,
+        device: DeviceRecord,
+    ) -> Result<bool, StorageError> {
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        if inner
+            .pairing
+            .as_ref()
+            .is_none_or(|pairing| pairing.pairing_id != pairing_id)
+        {
+            return Ok(false);
+        }
+        let mut devices = inner.devices.clone();
+        devices.retain(|stored| stored.device_id != device.device_id);
+        devices.push(device);
+        self.save_devices(&devices)?;
+        inner.devices = devices;
+        Ok(true)
+    }
     pub fn devices(&self) -> Vec<DeviceRecord> {
         self.inner
             .read()
@@ -366,6 +387,7 @@ impl SecurityState {
     }
     pub fn set_registration_state(
         &self,
+        pairing_id: &str,
         state: Vec<u8>,
         device_id: String,
         display_name: String,
@@ -374,14 +396,23 @@ impl SecurityState {
         let Some(pairing) = inner.pairing.as_mut() else {
             return false;
         };
+        if pairing.pairing_id != pairing_id {
+            return false;
+        }
         pairing.opaque_registration_state = zeroize::Zeroizing::new(state);
         pairing.pending_device_id = Some(device_id);
         pairing.pending_display_name = Some(display_name);
         true
     }
-    pub fn take_registration_state(&self) -> Option<(Vec<u8>, String, String)> {
+    pub fn take_registration_state_for(
+        &self,
+        pairing_id: &str,
+    ) -> Option<(Vec<u8>, String, String)> {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let pairing = inner.pairing.as_mut()?;
+        if pairing.pairing_id != pairing_id {
+            return None;
+        }
         if pairing.opaque_registration_state.is_empty() {
             return None;
         }
@@ -390,6 +421,20 @@ impl SecurityState {
             pairing.pending_device_id.take()?,
             pairing.pending_display_name.take()?,
         ))
+    }
+
+    pub fn clear_pairing_if_matches(&self, pairing_id: &str) -> bool {
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        if inner
+            .pairing
+            .as_ref()
+            .is_none_or(|pairing| pairing.pairing_id != pairing_id)
+        {
+            return false;
+        }
+        inner.pairing = None;
+        inner.pairing_code = None;
+        true
     }
 }
 impl SecurityState {

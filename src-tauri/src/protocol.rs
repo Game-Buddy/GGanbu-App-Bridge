@@ -442,6 +442,10 @@ fn publish_security_snapshot_locked(state: &ProtocolModule) {
 
 fn pairing_authentication_failed(state: &ProtocolModule) -> ApiError {
     let _pairing_transition = state.bridge.pairing_transition();
+    pairing_authentication_failed_locked(state)
+}
+
+fn pairing_authentication_failed_locked(state: &ProtocolModule) -> ApiError {
     state.security.record_pairing_failure();
     publish_security_snapshot_locked(state);
     ApiError::PairingAuthenticationFailed
@@ -454,6 +458,12 @@ fn device_authentication_failed(state: &ProtocolModule, device_id: &str) -> ApiE
 
 fn active_pairing(state: &ProtocolModule) -> Result<crate::security::PairingSession, ApiError> {
     let _pairing_transition = state.bridge.pairing_transition();
+    active_pairing_locked(state)
+}
+
+fn active_pairing_locked(
+    state: &ProtocolModule,
+) -> Result<crate::security::PairingSession, ApiError> {
     let pairing = state
         .security
         .pairing()
@@ -543,7 +553,7 @@ pub async fn pairing_register_start(
     if !has_json_content_type(&headers) {
         return Err(ApiError::UnsupportedMediaType);
     }
-    active_pairing(&state)?;
+    let pairing = active_pairing(&state)?;
     let session_id = envelope.session_id.clone();
     let request: PairingRegistrationStartRequest = decrypt_temporary_payload(&state, &envelope)
         .map_err(|_| pairing_authentication_failed(&state))?;
@@ -571,6 +581,7 @@ pub async fn pairing_register_start(
         .registration_start(&message, request.device_id.as_bytes())
         .map_err(|_| pairing_authentication_failed(&state))?;
     if !state.security.set_registration_state(
+        &pairing.pairing_id,
         vec![1],
         request.device_id,
         request.display_name.trim().to_owned(),
@@ -596,30 +607,30 @@ pub async fn pairing_register_finish(
     if !has_json_content_type(&headers) {
         return Err(ApiError::UnsupportedMediaType);
     }
-    active_pairing(&state)?;
+    let _pairing_transition = state.bridge.pairing_transition();
+    let pairing = active_pairing_locked(&state)?;
+    let pairing_id = pairing.pairing_id.clone();
     let session_id = envelope.session_id.clone();
     let request: PairingRegistrationFinishRequest = decrypt_temporary_payload(&state, &envelope)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed_locked(&state))?;
     let message = decode_pairing_message(&request.message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed_locked(&state))?;
     let (_state, device_id, display_name) = state
         .security
-        .take_registration_state()
-        .ok_or_else(|| pairing_authentication_failed(&state))?;
+        .take_registration_state_for(&pairing_id)
+        .ok_or_else(|| pairing_authentication_failed_locked(&state))?;
     let password_file = state
         .security
         .opaque()
         .registration_finish(&[], &message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed_locked(&state))?;
     let now = Utc::now();
-    state
+    let persisted = state
         .security
-        .add_device(crate::security::DeviceRecord::new(
-            device_id.clone(),
-            display_name,
-            password_file,
-            now,
-        ))
+        .add_device_if_pairing_matches(
+            &pairing_id,
+            crate::security::DeviceRecord::new(device_id.clone(), display_name, password_file, now),
+        )
         .map_err(|error| {
             tracing::error!(%error, "could not save paired device");
             ApiError::StorageUnavailable
@@ -632,8 +643,9 @@ pub async fn pairing_register_finish(
             device_id,
         },
     )?;
-    let _pairing_transition = state.bridge.pairing_transition();
-    state.security.clear_pairing_and_code();
+    if !persisted || !state.security.clear_pairing_if_matches(&pairing_id) {
+        return Err(ApiError::PairingUnavailable);
+    }
     publish_security_snapshot_locked(&state);
     Ok(Json(response))
 }
