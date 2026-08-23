@@ -28,4 +28,4 @@ Maintainers will acknowledge a complete report as soon as practical, validate it
 
 ## Release integrity
 
-Official builds are published only through this repository's GitHub Releases page. Published assets will include checksums, signatures, and provenance when configured. Never commit or share private signing material.
+Official Linux builds are published only through this repository's GitHub Releases page. Official Windows builds are published only through the Microsoft Store; unsigned Actions artifacts are for Store submission and QA, not end-user installation. Published assets include checksums, signatures, and provenance where configured. Never commit or share private signing material.

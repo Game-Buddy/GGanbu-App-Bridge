@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Game Buddy
+  SPDX-License-Identifier: AGPL-3.0-only
+
+  Render with `pnpm msix:prepare`; do not submit this template directly.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  IgnorableNamespaces="uap rescap uap10">
+
+  <Identity
+    Name="__IDENTITY_NAME__"
+    Publisher="__PUBLISHER__"
+    Version="__MSIX_VERSION__" />
+
+  <Properties>
+    <DisplayName>GGanbu App Bridge</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Description>Secure local companion bridge for GGanbu.app</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <uap10:PackageIntegrity>
+      <uap10:Content Enforcement="on" />
+    </uap10:PackageIntegrity>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.22000.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="GGanbuAppBridge"
+      Executable="gganbu-app-bridge.exe"
+      EntryPoint="Windows.FullTrustApplication"
+      uap10:TrustLevel="mediumIL"
+      uap10:RuntimeBehavior="packagedClassicApp">
+      <uap:VisualElements
+        DisplayName="GGanbu App Bridge"
+        Description="Secure local companion bridge for GGanbu.app"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
