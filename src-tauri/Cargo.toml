@@ -54,3 +54,8 @@ windows-sys = { version = "0.61.x", features = ["Win32_UI_Input_KeyboardAndMouse
 
 [dev-dependencies]
 http-body-util = "0.1.x"
+
+# cargo-machete cannot see the build-script import, but tauri-build is required
+# by build.rs to generate the Tauri platform glue.
+[package.metadata.cargo-machete]
+ignored = ["tauri-build"]

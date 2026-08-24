@@ -31,7 +31,23 @@ pnpm install --frozen-lockfile
 pnpm hooks:install
 ```
 
-The hook runs `pnpm check`, covering formatting, linting, type checking, frontend tests/build, and Rust checks. Run `pnpm check` manually when needed; the desktop bundle build remains a separate CI/release check.
+The hook runs `pnpm check`, covering formatting, linting, type checking, frontend tests/build, Rust dependency analysis, and Rust checks. The dependency analysis includes RustSec advisories, Cargo Deny policy, and unused-dependency detection. Run `pnpm check` manually when needed; the desktop bundle build remains a separate CI/release check. Workflow syntax and GitHub Actions security are checked in CI with actionlint and zizmor.
+
+For the complete local Rust dependency-analysis command, install the pinned tools once:
+
+```bash
+cargo install cargo-audit --version 0.22.2 --locked
+cargo install cargo-machete --version 0.9.2 --locked
+cargo deny --version
+```
+
+For local GitHub Actions analysis, install actionlint and zizmor, then run
+`pnpm check:workflows`:
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+uv tool install zizmor==1.24.0
+```
 
 ## Versioning
 

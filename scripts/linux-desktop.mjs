@@ -17,12 +17,21 @@ import { join, resolve } from "node:path";
 const desktopEntryName = "com.gamebuddy.gganbu-app-bridge.desktop";
 const desktopEntryReservedCharacters = /[\s"'\\><~|&;$*?#()`]/;
 
+export function encodeDesktopString(value) {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\r", "\\r");
+}
+
 export function encodeDesktopExecArg(value) {
   const needsQuoting =
     desktopEntryReservedCharacters.test(value) || value.includes("%");
   const escaped = value.replace(/[\\"`$]/g, "\\$&").replaceAll("%", "%%");
 
-  return needsQuoting ? `"${escaped}"` : escaped;
+  const serialized = encodeDesktopString(escaped);
+  return needsQuoting ? `"${serialized}"` : serialized;
 }
 
 export function buildLinuxDesktopEntry({ binaryPath, iconPath }) {
@@ -30,7 +39,7 @@ export function buildLinuxDesktopEntry({ binaryPath, iconPath }) {
 Categories=Network;
 Comment=Secure local companion bridge for GGanbu.app
 Exec=${encodeDesktopExecArg(binaryPath)}
-Icon=${iconPath}
+Icon=${encodeDesktopString(iconPath)}
 Name=GGanbu App Bridge
 StartupWMClass=gganbu-app-bridge
 StartupNotify=true

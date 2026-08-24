@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildLinuxDesktopEntry,
+  encodeDesktopString,
   encodeDesktopExecArg,
 } from "./linux-desktop.mjs";
 
@@ -22,16 +23,34 @@ describe("Linux desktop entry", () => {
         "/home/alice/Game$Buddy/src-tauri/target/debug/gganbu-app-bridge",
       ),
     ).toBe(
-      '"/home/alice/Game\\$Buddy/src-tauri/target/debug/gganbu-app-bridge"',
+      '"/home/alice/Game\\\\$Buddy/src-tauri/target/debug/gganbu-app-bridge"',
     );
   });
 
-  it("uses the encoded executable in the desktop entry", () => {
+  it("serializes backslashes in Exec arguments", () => {
+    const path = String.raw`/home/alice/Game\Buddy/src-tauri/target/debug/gganbu-app-bridge`;
+
+    expect(encodeDesktopExecArg(path)).toBe(
+      String.raw`"/home/alice/Game\\\\Buddy/src-tauri/target/debug/gganbu-app-bridge"`,
+    );
+  });
+
+  it("serializes the executable and icon in the desktop entry", () => {
+    const iconPath = String.raw`/home/alice/Game\Buddy/icon.png`;
+
     expect(
       buildLinuxDesktopEntry({
         binaryPath: "/home/alice/Game Buddy/gganbu-app-bridge",
-        iconPath: "/home/alice/Game Buddy/icon.png",
+        iconPath,
       }),
-    ).toContain('Exec="/home/alice/Game Buddy/gganbu-app-bridge"');
+    ).toContain(
+      'Exec="/home/alice/Game Buddy/gganbu-app-bridge"\nIcon=/home/alice/Game\\\\Buddy/icon.png',
+    );
+  });
+
+  it("escapes Desktop Entry string values", () => {
+    expect(encodeDesktopString(String.raw`Game\Buddy`)).toBe(
+      String.raw`Game\\Buddy`,
+    );
   });
 });
