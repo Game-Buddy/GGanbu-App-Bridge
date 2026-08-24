@@ -1,7 +1,7 @@
 {
   "name": "gganbu-app-bridge",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -27,8 +27,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check .",
+    "check:workflows": "actionlint .github/workflows/*.yml && zizmor --offline .github/workflows",
+    "check:rust-dependencies": "cargo audit --file src-tauri/Cargo.lock && cargo deny --manifest-path src-tauri/Cargo.toml --config src-tauri/deny.toml --all-features check advisories licenses && cargo machete --with-metadata src-tauri",
     "check:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-features",
-    "check": "pnpm version:check && pnpm msix:check && pnpm license:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:rust"
+    "check": "pnpm version:check && pnpm msix:check && pnpm license:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:rust-dependencies && pnpm check:rust"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

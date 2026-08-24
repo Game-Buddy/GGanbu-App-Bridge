@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Game Buddy
+# SPDX-License-Identifier: AGPL-3.0-only
+[Desktop Entry]
+Categories=Network;
+Comment=Secure local companion bridge for GGanbu.app
+Exec=gganbu-app-bridge
+Icon=gganbu-app-bridge
+Name=GGanbu App Bridge
+StartupWMClass=gganbu-app-bridge
+StartupNotify=true
+Terminal=false
+Type=Application

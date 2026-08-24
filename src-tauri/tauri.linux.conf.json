@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "linux": {
+      "appimage": {
+        "files": {
+          "usr/share/applications/com.gamebuddy.gganbu-app-bridge.desktop": "assets/linux/com.gamebuddy.gganbu-app-bridge.desktop"
+        }
+      }
+    }
+  }
+}

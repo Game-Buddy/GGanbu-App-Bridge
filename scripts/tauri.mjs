@@ -3,6 +3,7 @@
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { installLinuxDevDesktopEntry } from "./linux-desktop.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const tauriCli = resolve(
@@ -24,6 +25,11 @@ const command =
     ? process.execPath
     : resolve(root, "node_modules", ".bin", "tauri");
 const commandArgs = process.platform === "win32" ? [tauriCli, ...args] : args;
+
+if (process.platform === "linux" && args[0] === "dev") {
+  installLinuxDevDesktopEntry({ root });
+}
+
 const result = spawnSync(command, commandArgs, {
   cwd: root,
   stdio: "inherit",

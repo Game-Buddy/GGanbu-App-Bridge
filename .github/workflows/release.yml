@@ -33,6 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in {1..48}; do
+            echo "Waiting for Checks and desktop builds (attempt $attempt/48)..."
             conclusion="$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow "Checks and desktop builds" \
