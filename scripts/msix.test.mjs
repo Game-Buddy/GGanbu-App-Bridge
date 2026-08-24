@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
 import { escapeXml, renderManifest, semverToMsixVersion } from "./msix.mjs";
@@ -74,7 +75,7 @@ describe("MSIX manifest rendering", () => {
   });
 
   it("declares private LAN access for the local bridge server", () => {
-    const manifest = readFileSync(
+    const manifestXml = readFileSync(
       resolve(
         import.meta.dirname,
         "..",
@@ -84,10 +85,25 @@ describe("MSIX manifest rendering", () => {
       ),
       "utf8",
     );
+    const document = new JSDOM(manifestXml, { contentType: "text/xml" }).window
+      .document;
 
-    expect(manifest).toContain(
-      '<Capability Name="privateNetworkClientServer" />',
+    const capabilities = document.getElementsByTagNameNS(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
+      "Capabilities",
+    )[0];
+    expect(capabilities).toBeDefined();
+
+    const capabilityNames = Array.from(capabilities.children).map(
+      (capability) =>
+        `${capability.namespaceURI}:${capability.localName}:${capability.getAttribute("Name")}`,
     );
-    expect(manifest).toContain('<rescap:Capability Name="runFullTrust" />');
+
+    expect(capabilityNames).toContain(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10:Capability:privateNetworkClientServer",
+    );
+    expect(capabilityNames).toContain(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities:Capability:runFullTrust",
+    );
   });
 });
