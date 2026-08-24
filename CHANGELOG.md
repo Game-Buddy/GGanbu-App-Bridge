@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-24
+
+### Fixed
+
+- Use the correct application icon for Linux development windows and packaged AppImage launches by matching GNOME/Wayland desktop metadata to the Tauri application ID.
+
 ## [0.5.0] - 2026-08-23
 
 ### Added
@@ -112,7 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.9...v0.5.0
 [0.4.9]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.7...v0.4.8
