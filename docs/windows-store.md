@@ -36,7 +36,7 @@ For a stable release, the `Desktop release and Store package` workflow:
 
 Download that artifact, confirm `storeReady` is `true` in `submission-metadata.json`, verify the checksum, and upload the `.msix` to the matching Partner Center product submission. Do not sign it first: Partner Center accepts the unsigned package and signs it during publication. Follow [Microsoft's MSIX package requirements](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements) when completing the listing and certification questionnaire.
 
-The manifest declares only `runFullTrust`. This restricted capability is required because Tauri is a classic desktop application and the bridge must run native keyboard and local-server code. Explain that purpose in the submission notes if certification asks for justification.
+The manifest declares `privateNetworkClientServer` because the bridge accepts connections from browsers on the user's home or work network. It also declares `runFullTrust`, which Tauri needs for the classic desktop process that handles native keyboard actions. Explain both uses in the submission notes if certification asks for justification.
 
 ## Version mapping
 

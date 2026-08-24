@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-24
+
+### Fixed
+
+- Declare private-network client and server access in the Windows MSIX package so browsers on the local network can reach the bridge.
+
 ## [0.5.1] - 2026-08-24
 
 ### Fixed
@@ -118,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.1...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.9...v0.5.0
 [0.4.9]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.4.8...v0.4.9

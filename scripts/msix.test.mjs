@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Game Buddy
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
 import { escapeXml, renderManifest, semverToMsixVersion } from "./msix.mjs";
@@ -68,5 +72,38 @@ describe("MSIX manifest rendering", () => {
         "1.0.0.0",
       ),
     ).toThrow("__PUBLISHER__");
+  });
+
+  it("declares private LAN access for the local bridge server", () => {
+    const manifestXml = readFileSync(
+      resolve(
+        import.meta.dirname,
+        "..",
+        "windows",
+        "msix",
+        "Package.appxmanifest.template",
+      ),
+      "utf8",
+    );
+    const document = new JSDOM(manifestXml, { contentType: "text/xml" }).window
+      .document;
+
+    const capabilities = document.getElementsByTagNameNS(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
+      "Capabilities",
+    )[0];
+    expect(capabilities).toBeDefined();
+
+    const capabilityNames = Array.from(capabilities.children).map(
+      (capability) =>
+        `${capability.namespaceURI}:${capability.localName}:${capability.getAttribute("Name")}`,
+    );
+
+    expect(capabilityNames).toContain(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10:Capability:privateNetworkClientServer",
+    );
+    expect(capabilityNames).toContain(
+      "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities:Capability:runFullTrust",
+    );
   });
 });

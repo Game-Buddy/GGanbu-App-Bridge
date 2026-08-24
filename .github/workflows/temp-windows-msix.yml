@@ -1,0 +1,112 @@
+name: Temporary Windows MSIX build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-msix:
+    name: Build Windows x86_64 MSIX
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      # No Partner Center identity is supplied intentionally. This workflow
+      # creates a development-identity package for local testing only.
+      GGANBU_RELEASE_BUILD: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm 11.18.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.18.0
+          run_install: false
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Windows App CLI
+        uses: microsoft/setup-WinAppCli@b93bbddc1f7abc061ca0d3a8119e3a0c7dd71495 # v0.2
+
+      - name: Install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read build metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "short_sha=$($env:GITHUB_SHA.Substring(0, 7))" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows application
+        run: pnpm tauri build --no-bundle
+
+      - name: Prepare MSIX package layout
+        id: msix
+        run: pnpm msix:prepare
+
+      - name: Create unsigned MSIX and checksum
+        shell: pwsh
+        env:
+          MSIX_FILENAME: ${{ steps.msix.outputs.msix_filename }}
+        run: |
+          $output = Join-Path "target/msix" $env:MSIX_FILENAME
+          winapp pack "target/msix/package" `
+            --manifest "target/msix/package/Package.appxmanifest" `
+            --output $output `
+            --skip-pri `
+            --quiet
+          if ($LASTEXITCODE -ne 0) {
+            throw "winapp failed to create the MSIX package"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $output).Hash.ToLowerInvariant()
+          $checksum = "$hash  $env:MSIX_FILENAME`n"
+          [IO.File]::WriteAllText(
+            "target/msix/SHA256SUMS-windows-x86_64",
+            $checksum,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Write build summary
+        shell: pwsh
+        env:
+          MSIX_VERSION: ${{ steps.msix.outputs.msix_version }}
+        run: |
+          @"
+          This is an unsigned development-identity MSIX for local testing only.
+          MSIX version: $env:MSIX_VERSION
+          It is not suitable for Microsoft Store submission or public distribution.
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload temporary MSIX artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: temp-windows-msix-x86_64-${{ steps.metadata.outputs.version }}-${{ steps.metadata.outputs.short_sha }}
+          path: |
+            target/msix/*.msix
+            target/msix/SHA256SUMS-windows-x86_64
+            target/msix/submission-metadata.json
+          if-no-files-found: error
+          retention-days: 7
