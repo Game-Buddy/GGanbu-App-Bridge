@@ -1,6 +1,6 @@
 # Microsoft Store distribution
 
-Windows builds are distributed through the Microsoft Store as MSIX packages. The Store signs the accepted package with the trusted certificate associated with the reserved product identity. The unsigned MSIX produced by GitHub Actions is a submission artifact, not a public installer, and must never be attached to a GitHub Release or offered directly to users.
+Windows builds are distributed through the [Microsoft Store](https://apps.microsoft.com/detail/9nfnnsx3pc7j) as MSIX packages. The Store signs the accepted package with the trusted certificate associated with the reserved product identity. The unsigned MSIX produced by GitHub Actions is a submission artifact, not a public installer, and must never be attached to a GitHub Release or offered directly to users.
 
 This avoids maintaining a commercial code-signing certificate while giving users the normal trusted Store installation and update experience. Microsoft controls certification and reputation checks, so no packaging change can guarantee that a rejected or malicious build will be warning-free.
 
@@ -26,7 +26,7 @@ If the variables are absent, CI deliberately uses a development identity so the 
 
 ## Build and submit
 
-For a stable release, the `Desktop release and Store package` workflow:
+For each stable release, the `Desktop release and Store package` workflow:
 
 1. builds the Tauri executable with the production origin policy;
 2. renders the Partner Center identity into `Package.appxmanifest`;

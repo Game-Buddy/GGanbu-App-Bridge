@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-28
+
+### Documentation
+
+- Refresh public, security, Store, governance, and release-planning documentation for the current release channels and main-only workflow.
+
 ## [0.5.2] - 2026-08-24
 
 ### Fixed
