@@ -1,73 +1,41 @@
 # Contributing to GGanbu App Bridge
 
-Thanks for helping improve GGanbu App Bridge. The repository is currently being bootstrapped, so discuss large product, protocol, or architecture changes before investing in an implementation.
+Thanks for helping improve GGanbu App Bridge. For support or early design questions, use [GitHub Discussions](https://github.com/Game-Buddy/GGanbu-App-Bridge/discussions). Open an issue for a reproducible bug or a focused feature request. Report security issues privately through [SECURITY.md](./SECURITY.md).
 
-## Before you start
+## Get started
 
-- Search existing issues and discussions.
-- Use Discussions for support and early design questions.
-- Open an issue for reproducible bugs or a scoped feature proposal.
-- Report security issues privately as described in [SECURITY.md](./SECURITY.md).
+1. Create a short-lived branch from `main`, for example `feature/pairing-status` or `fix/linux-startup`.
+2. Install the dependencies and enable the repository hook:
 
-## Branches
+   ```bash
+   pnpm install --frozen-lockfile
+   pnpm hooks:install
+   ```
 
-1. Branch from `main` using a short descriptive name such as `feature/pairing-status` or `fix/linux-startup`.
-2. Keep the branch focused on one change.
-3. Open the pull request against `main` and complete the pull-request template.
-4. Merge the pull request into `main` after the required checks pass.
-5. After the merged `main` commit passes `Checks and desktop builds` and
-   `CodeQL`, the release workflow starts when its version has not already been
-   released. The protected release environment controls approval, signing, tag
-   creation, and publication.
+3. Run the application with `pnpm tauri dev`.
+4. Run `pnpm check` before opening a pull request. Workflow checks can be run with `pnpm check:workflows` when the required tools are installed.
 
-Direct pushes to `main` are not part of the normal workflow.
+The full check includes formatting, linting, type checking, frontend tests and build, Rust dependency analysis, and Rust checks. CI runs the required checks again.
 
-## Local checks
+## Version and changelog
 
-Install the repository-managed pre-commit hook once after cloning:
+Every pull request must update the application version and `CHANGELOG.md`:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm hooks:install
+pnpm version:set 0.6.0
+pnpm version:check
 ```
 
-The hook runs `pnpm check`, covering formatting, linting, type checking, frontend tests/build, Rust dependency analysis, and Rust checks. The dependency analysis includes RustSec advisories, Cargo Deny policy, and unused-dependency detection. Run `pnpm check` manually when needed; the desktop bundle build remains a separate CI/release check. Workflow syntax and GitHub Actions security are checked in CI with actionlint and zizmor.
-
-For the complete local Rust dependency-analysis command, install the pinned tools once:
-
-```bash
-cargo install cargo-audit --version 0.22.2 --locked
-cargo install cargo-machete --version 0.9.2 --locked
-cargo deny --version
-```
-
-For local GitHub Actions analysis, install actionlint and zizmor, then run
-`pnpm check:workflows`:
-
-```bash
-GOBIN="$HOME/.local/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-uv tool install zizmor==1.24.0
-```
-
-## Versioning
-
-`VERSION` is the source of truth for the application version. To change it, run:
-
-```bash
-pnpm version:set 0.4.0
-```
-
-This updates the package, Cargo, Tauri, and frontend version files. Run `pnpm version:check` to verify that all application versions remain synchronized. Update `CHANGELOG.md` in the same change.
+`VERSION` is the source of truth. The version command keeps the package, Cargo, Tauri, and frontend versions synchronized.
 
 ## Pull requests
 
-- Explain the user-visible outcome and why the change is needed.
-- Link related issues with `Closes #123` when appropriate.
-- Include testing evidence and screenshots for UI changes.
+- Target `main` and keep the change focused.
+- Explain the user-visible result and link related issues when appropriate.
 - Add or update tests for behavior changes.
-- Update the application version with `pnpm version:set` for every pull request.
-- Update documentation and `CHANGELOG.md` for user-visible changes.
-- Do not include generated build outputs, secrets, signing keys, tokens, or credentials.
+- Include testing evidence and screenshots for UI changes.
+- Update documentation for user-visible behavior.
+- Do not commit generated outputs, secrets, signing keys, tokens, or credentials.
 - Resolve review conversations before requesting final approval.
 
-Pull requests into `main` use the repository's configured merge method. By contributing, you agree to license your contribution under `AGPL-3.0-only`. Keep third-party material out of contributions unless its license is compatible and its copyright and license notices are included.
+Pull requests are merged after the required checks and review pass. By contributing, you agree to license your contribution under `AGPL-3.0-only`. Keep third-party material out of contributions unless its license and copyright notices are included.
