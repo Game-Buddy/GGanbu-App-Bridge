@@ -1,26 +1,61 @@
 # GGanbu App Bridge
 
-GGanbu App Bridge is the future public home of the GGanbu desktop companion. The application will provide secure local communication between the GGanbu.app browser experience and native operating-system capabilities.
+GGanbu App Bridge is the native desktop companion for [GGanbu.app](https://gganbu.app). It provides an authenticated, origin-constrained local-network bridge between the browser experience and operating-system capabilities such as keyboard input and War Thunder keybinding mappings.
 
-> [!IMPORTANT]
-> This repository contains the working desktop bridge application. A stable public release and Microsoft Store listing are still pending.
+The latest stable release is available from [GitHub Releases](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest).
 
-## Planned platforms
+## What it does
 
-- Windows 11 x86_64
-- Ubuntu 24.04 x86_64 on X11 and Wayland
+- Connects GGanbu.app to the desktop bridge through an authenticated pairing flow.
+- Resolves allowlisted actions and sends supported keyboard input through native platform adapters.
+- Shows bridge health, activity, connected devices, and pairing state in the desktop UI.
+- Loads the bundled War Thunder keybinding presets or imports a compatible mapping file.
 
-macOS support is not currently planned. The supported platform list will be updated as builds are verified.
+## Availability
+
+| Platform                              | Distribution                                                      | Status                         |
+| ------------------------------------- | ----------------------------------------------------------------- | ------------------------------ |
+| Ubuntu 24.04 x86_64 on X11 or Wayland | Signed AppImage                                                   | Available from GitHub Releases |
+| Windows 11 x86_64                     | [Microsoft Store](https://apps.microsoft.com/detail/9nfnnsx3pc7j) | Available                      |
+| macOS                                 | —                                                                 | Not currently planned          |
+
+The supported platform list reflects the platforms currently built and tested by the project. Other Linux distributions may work, but are not part of the supported release matrix.
 
 ## Installation
 
-There is no installable release yet. Windows users will install the app from its official Microsoft Store listing after publication. Linux releases will be available from [GitHub Releases](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest) with `SHA256SUMS` and detached signatures.
+### Linux
 
-Do not install unsigned Windows artifacts from GitHub Actions or download installers from mirrors and third-party websites.
+Download the AppImage and its verification files from the [latest release](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest). Verify the published checksum and detached signature before launching it. The complete procedure is in [release signing and verification](./docs/security/release-signing.md).
 
-## Quick start for contributors
+### Windows
 
-The application source is a Tauri 2 desktop app with a React frontend and Rust local bridge service:
+Install GGanbu App Bridge from the [official Microsoft Store listing](https://apps.microsoft.com/detail/9nfnnsx3pc7j). GitHub Actions also produces an unsigned MSIX submission artifact for Partner Center; it is not a public installer and must not be installed or redistributed. The maintainer submission process is documented in [Microsoft Store distribution](./docs/windows-store.md).
+
+Do not download installers from mirrors or third-party websites.
+
+## First use
+
+1. Launch GGanbu App Bridge.
+2. Start the bridge server from the **Status** view, or choose **Add device** to start it while pairing.
+3. Open [GGanbu.app](https://gganbu.app) in the browser.
+4. Choose **Add device** in the bridge and enter the displayed pairing code in GGanbu.app.
+5. Confirm that the device is connected before sending actions.
+
+The bridge listens on port `53177`. If the browser cannot connect, check the bridge status, the configured browser origin, and any local-network permissions required by the operating system or browser.
+
+## Development
+
+GGanbu App Bridge is a Tauri 2 desktop application with a React frontend and a Rust local bridge service.
+
+### Prerequisites
+
+- Node.js 24
+- pnpm 11
+- Rust 1.94.1
+- The [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the host operating system
+- War Thunder only when running game integration tests
+
+### Run locally
 
 ```bash
 corepack enable
@@ -28,48 +63,38 @@ pnpm install --frozen-lockfile
 pnpm tauri dev
 ```
 
-Development requires Node.js 24, pnpm 11, Rust 1.94.1, the Tauri prerequisites for the host operating system, and War Thunder for end-to-end integration testing.
+The standard development server uses `http://127.0.0.1:5173` and `http://localhost:5173` by default. To use another browser origin, create a root `.env` file with a comma-separated list of exact origins:
 
-Development and local builds read `GGANBU_BRIDGE_ALLOWED_ORIGINS` from `.env` as a comma-separated list of exact browser origins. Local bundles include that public `.env` configuration. Release builds set `GGANBU_RELEASE_BUILD` in CI and use only the static `https://gganbu.app` origin; do not put secrets in `.env`.
+```dotenv
+GGANBU_BRIDGE_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
+Release builds ignore that override and allow only `https://gganbu.app`. Never put secrets in `.env`; the file is intended for public origin configuration only.
 
-The Tauri source layout, trust boundaries, and request flow are documented in
-[docs/architecture.md](./docs/architecture.md).
+### Run checks
 
-## Repository workflow
+```bash
+pnpm check
+pnpm check:workflows
+```
 
-- `main` is the default branch and the stable release branch.
-- Feature and fix branches are short-lived and branch from `main`.
-- Feature pull requests target `main`, must pass the required checks, and must update the synchronized application version and `CHANGELOG.md`.
-- After `Checks and desktop builds` and `CodeQL` succeed for `main`, the approved workflow checks the version in that tested commit. If that version has no GitHub Release, it builds the desktop packages, signs the Linux release, creates its protected semantic version tag, and publishes the Linux release.
-- The same workflow creates an unsigned Windows MSIX for Partner Center and keeps it out of GitHub Releases. Microsoft signs and distributes the accepted package through the Store; the unsigned submission artifact is not a public installer.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for branch, versioning, changelog, and pull-request requirements.
 
-Pushes to `main` also produce QA packages. Stable Linux builds come only from signed GitHub Releases, and stable Windows builds come only from the Microsoft Store.
+## Architecture and security
 
-The maintainer-side GitHub settings that cannot be enforced by committed files are tracked in [docs/repository-governance.md](./docs/repository-governance.md).
+- [Application architecture](./docs/architecture.md) — source boundaries, request flow, and trust boundaries.
+- [Security policy](./SECURITY.md) — private vulnerability reporting.
+- [Release signing and verification](./docs/security/release-signing.md) — Linux signatures, checksums, and release provenance.
+- [Repository governance](./docs/repository-governance.md) — protected branches, release controls, and maintainer settings.
+- [War Thunder preset provenance](./docs/preset-provenance.md) — compatibility-data ownership and licensing context.
 
-## Security
+The WebView is treated as an untrusted client. Rust owns protocol validation, authentication, persistence, origin policy, and privileged operating-system input.
 
-Please do not disclose vulnerabilities in a public issue. Follow the private reporting instructions in [SECURITY.md](./SECURITY.md). Release verification and signing setup are documented in [docs/security/release-signing.md](./docs/security/release-signing.md), and the Windows submission process is documented in [docs/windows-store.md](./docs/windows-store.md).
+## Support and project information
 
-## Troubleshooting
-
-### No release is available
-
-The project is still being bootstrapped. Watch the [Releases page](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases) rather than installing an unofficial build.
-
-### A workflow is skipped
-
-Application CI runs the JavaScript and Rust quality checks and desktop build checks on supported branches.
-
-### I need help or want to propose an idea
-
-Use [GitHub Discussions](https://github.com/Game-Buddy/GGanbu-App-Bridge/discussions) for support and product questions. Use the issue forms for reproducible bugs and actionable feature requests.
-
-## Project status and screenshots
-
-The product UI is included in the desktop application. Screenshots will be added alongside the first signed public release.
+- Use [GitHub Discussions](https://github.com/Game-Buddy/GGanbu-App-Bridge/discussions) for questions and support.
+- Use the issue forms for reproducible bugs and actionable feature requests.
+- See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## License
 
