@@ -367,7 +367,7 @@ async fn valid_messages_are_trimmed_sequenced_and_replace_only_the_latest() {
 }
 
 #[tokio::test]
-async fn known_actions_resolve_without_execution_and_update_state() {
+async fn known_actions_resolve_without_execution_or_activity_state() {
     let (router, bridge) = test_app();
     let response = send_action(&router, r#"{"actions":["ID_SCOUT_UAV"]}"#, 1).await;
 
@@ -383,12 +383,8 @@ async fn known_actions_resolve_without_execution_and_update_state() {
     assert_eq!(body["bindings"][0]["binding"]["display"], "C + V");
 
     let snapshot = bridge.snapshot();
-    let attempt = snapshot.last_action.unwrap();
-    assert_eq!(attempt.action, "ID_SCOUT_UAV");
-    assert_eq!(attempt.request_id, "resolve-0");
-    assert_eq!(attempt.shortcut.unwrap().display, "C + V");
-    assert_eq!(attempt.validation, crate::state::ActionValidation::Accepted);
-    assert!(!attempt.executed);
+    assert!(snapshot.last_action.is_none());
+    assert!(snapshot.action_history.is_empty());
     assert!(snapshot.last_message.is_none());
 }
 
@@ -671,7 +667,7 @@ async fn malformed_action_requests_cannot_replace_the_last_action() {
 }
 
 #[tokio::test]
-async fn action_attempt_sequences_ignore_skipped_unknown_codes() {
+async fn resolve_requests_do_not_create_action_attempts() {
     let (router, bridge) = test_app();
     assert_eq!(
         send_action(&router, r#"{"actions":["ID_RANGEFINDER"]}"#, 1,)
@@ -691,7 +687,9 @@ async fn action_attempt_sequences_ignore_skipped_unknown_codes() {
         response_json(third).await["bindings"][0]["action"],
         "ID_CAMERA_BINOCULARS"
     );
-    assert_eq!(bridge.snapshot().last_action.unwrap().sequence, 2);
+    let snapshot = bridge.snapshot();
+    assert!(snapshot.last_action.is_none());
+    assert!(snapshot.action_history.is_empty());
 }
 
 #[tokio::test]
