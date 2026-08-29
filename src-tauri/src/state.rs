@@ -206,39 +206,6 @@ impl SharedBridgeState {
         message
     }
 
-    pub fn record_action_attempt(
-        &self,
-        attempt: ActionAttempt,
-        publisher: &StatePublisher,
-    ) -> ActionAttempt {
-        self.record_action_attempts(vec![attempt], publisher)
-            .into_iter()
-            .next()
-            .expect("a single action attempt was supplied")
-    }
-
-    pub fn record_action_attempts(
-        &self,
-        mut attempts: Vec<ActionAttempt>,
-        publisher: &StatePublisher,
-    ) -> Vec<ActionAttempt> {
-        if attempts.is_empty() {
-            return attempts;
-        }
-        let snapshot = {
-            let mut inner = self.inner.write().expect("bridge state lock poisoned");
-            for attempt in &mut attempts {
-                attempt.sequence = inner.next_action_sequence;
-                inner.next_action_sequence += 1;
-            }
-            inner.snapshot.last_action = attempts.last().cloned();
-            inner.snapshot.revision += 1;
-            inner.snapshot.clone()
-        };
-        publisher(snapshot);
-        attempts
-    }
-
     pub fn record_execute_attempt(
         &self,
         mut attempt: ActionAttempt,
