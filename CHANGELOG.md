@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-09-03
+
+### Documentation
+
+- Document AI-assisted development expectations in the README and contributor guide.
+
 ## [0.5.4] - 2026-08-29
 
 ### Fixed
@@ -136,7 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authenticated pairing, encrypted bridge payloads, replay protection, request validation, and bounded request bodies.
 - Added release-signing documentation and verification workflow configuration.
 
-[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.4...HEAD
+[unreleased]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.3...v0.5.4
 [0.5.2]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Game-Buddy/GGanbu-App-Bridge/compare/v0.5.0...v0.5.1
