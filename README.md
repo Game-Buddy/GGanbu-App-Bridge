@@ -47,6 +47,14 @@ The bridge listens on port `53177`. If the browser cannot connect, check the bri
 
 GGanbu App Bridge is a Tauri 2 desktop application with a React frontend and a Rust local bridge service.
 
+### AI-assisted development
+
+Parts of this codebase may be developed with help from AI tools. AI-generated suggestions are reviewed, tested, and adapted by human contributors before they are included. Contributors remain responsible for the quality, security, licensing, and maintainability of their changes.
+
+AI tools are used during development only; they are not part of the GGanbu App Bridge runtime and the application does not provide an AI service.
+
+Contributing with AI assistance is welcome. The contributor who submits a change owns its correctness, its fit with the project, and everything that happens after it merges. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the project’s contribution requirements.
+
 ### Prerequisites
 
 - Node.js 24

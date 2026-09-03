@@ -17,6 +17,20 @@ Thanks for helping improve GGanbu App Bridge. For support or early design questi
 
 The full check includes formatting, linting, type checking, frontend tests and build, Rust dependency analysis, and Rust checks. CI runs the required checks again.
 
+## Using AI
+
+Use it. Parts of this codebase were written with help from AI tools. This is not a policy against using them. It is a policy about ownership. We review the contributor, not the tool.
+
+Before opening a pull request:
+
+- Own the approach, not just the output. You should understand the design and be able to explain why the change is built this way.
+- Be the quality gate. Check naming, structure, error handling, tests, security, and licensing yourself. Plausible code is not enough.
+- Make sure the change fits the project and the issue. Remove broad refactors or unrelated improvements that the task does not need.
+- Run the application and relevant checks. Do not rely on a tool's claim that the tests should pass.
+- Stay accountable after the change merges. You own the code and its maintenance, regardless of which tools helped write it.
+
+We do not require contributors to disclose which AI tools they used. We review the code, the testing evidence, and your understanding of the change. The same standard applies to issue reports: an AI-generated scan of the repository is not a bug report without the observed behavior, expected behavior, and enough detail to reproduce it.
+
 ## Version and changelog
 
 Every pull request must update the application version and `CHANGELOG.md`:
