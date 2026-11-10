@@ -8,6 +8,8 @@ import {
   createDecipheriv,
   createHash,
   hkdfSync,
+  randomBytes,
+  randomInt,
 } from "node:crypto";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
@@ -98,10 +100,12 @@ describe.skipIf(!process.env.GGANBU_BRIDGE_TEST_BINARY)(
   () => {
     let child: ChildProcess;
     let endpoint: string;
+    const password = randomInt(100_000_000).toString().padStart(8, "0");
     beforeAll(async () => {
       await opaque.ready;
       child = spawn(process.env.GGANBU_BRIDGE_TEST_BINARY!, [], {
         stdio: ["ignore", "pipe", "inherit"],
+        env: { ...process.env, GGANBU_BRIDGE_TEST_PAIRING_CODE: password },
       });
       const lines = createInterface({ input: child.stdout! });
       const [line] = await Promise.race([
@@ -131,7 +135,6 @@ describe.skipIf(!process.env.GGANBU_BRIDGE_TEST_BINARY)(
       return response.json();
     }
     it("pairs, registers, reconnects and exchanges authenticated commands", async () => {
-      const password = "12345678";
       const auth = opaque.client.startLogin({ password });
       const authStart = await post("/v1/pairing/auth/start", {
         version: 1,
@@ -153,7 +156,7 @@ describe.skipIf(!process.env.GGANBU_BRIDGE_TEST_BINARY)(
         authenticated!.sessionKey,
         true,
       );
-      const credential = "integration-device-password-with-entropy";
+      const credential = randomBytes(32).toString("base64url");
       const registration = opaque.client.startRegistration({
         password: credential,
       });

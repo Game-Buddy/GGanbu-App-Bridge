@@ -19,10 +19,11 @@ impl KeyboardExecutor for NoInput {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let password = std::env::var("GGANBU_BRIDGE_TEST_PAIRING_CODE")?;
     let security = SecurityState::default();
     let record = security
         .opaque()
-        .create_password_file(b"12345678", b"integration-pairing")?;
+        .create_password_file(password.as_bytes(), b"integration-pairing")?;
     security
         .start_pairing_with_code(
             PairingSession::new(
@@ -30,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 record,
                 chrono::Utc::now() + chrono::Duration::minutes(1),
             ),
-            "12345678".into(),
+            password,
         )
         .map_err(|_| "pairing failed")?;
     let origins = AllowedOrigins::parse_override(None)?;

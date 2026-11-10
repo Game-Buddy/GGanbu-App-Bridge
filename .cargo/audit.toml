@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Game Buddy
+# SPDX-License-Identifier: AGPL-3.0-only
+
+[advisories]
+# Owner: GameBuddy bridge maintainers. Review by 2026-12-01.
+# OPAQUE's Ristretto255 suite uses curve25519-dalek for secret arithmetic,
+# not crypto-bigint. See docs/security/dependency-exceptions.md and the
+# ristretto_suite_preserves_crypto_bigint_exception_assumptions regression.
+ignore = ["RUSTSEC-2026-0387"]

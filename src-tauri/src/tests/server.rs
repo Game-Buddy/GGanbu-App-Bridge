@@ -380,7 +380,10 @@ async fn known_actions_resolve_without_execution_or_activity_state() {
     assert_eq!(body["bindings"].as_array().unwrap().len(), 1);
     assert_eq!(body["bindings"][0]["action"], "ID_SCOUT_UAV");
     assert_eq!(body["bindings"][0]["label"], "Scout UAV");
-    assert_eq!(body["bindings"][0]["platform"], "linux");
+    assert_eq!(
+        body["bindings"][0]["platform"],
+        json!(crate::actions::TargetPlatform::current())
+    );
     assert_eq!(body["bindings"][0]["binding"]["keyCodes"], json!([46, 47]));
     assert_eq!(body["bindings"][0]["binding"]["modifiers"], json!([]));
     assert_eq!(body["bindings"][0]["binding"]["keys"], json!(["C", "V"]));

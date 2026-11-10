@@ -30,7 +30,7 @@ The bundled `src-tauri/assets/config/hotkeys/` files are third-party War Thunder
 | Cargo | ashpd | 0.13.13 | MIT | https://github.com/bilelmoussaoui/ashpd |
 | Cargo | async-broadcast | 0.7.2 | MIT OR Apache-2.0 | https://github.com/smol-rs/async-broadcast |
 | Cargo | async-channel | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-channel |
-| Cargo | async-executor | 1.14.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-executor |
+| Cargo | async-executor | 1.14.1 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-executor |
 | Cargo | async-io | 2.6.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-io |
 | Cargo | async-lock | 3.4.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-lock |
 | Cargo | async-process | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/async-process |
@@ -442,7 +442,7 @@ The bundled `src-tauri/assets/config/hotkeys/` files are third-party War Thunder
 | Cargo | tinyvec | 1.12.0 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec |
 | Cargo | tokio-macros | 2.7.2 | MIT | https://github.com/tokio-rs/tokio |
 | Cargo | tokio-util | 0.7.19 | MIT | https://github.com/tokio-rs/tokio |
-| Cargo | tokio | 1.53.1 | MIT | https://github.com/tokio-rs/tokio |
+| Cargo | tokio | 1.54.1 | MIT | https://github.com/tokio-rs/tokio |
 | Cargo | toml_datetime | 0.6.3 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml |
 | Cargo | toml_datetime | 0.7.5+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml |
 | Cargo | toml_datetime | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml |
@@ -3909,7 +3909,7 @@ THE SOFTWARE.
 - Cargo: adler2 2.0.1
 - Cargo: anyhow 1.0.104
 - Cargo: async-channel 2.5.0
-- Cargo: async-executor 1.14.0
+- Cargo: async-executor 1.14.1
 - Cargo: async-io 2.6.0
 - Cargo: async-lock 3.4.2
 - Cargo: async-process 2.5.0
@@ -4545,7 +4545,7 @@ SOFTWARE.
 <details>
 <summary>LICENSE for 2 packages · SHA-256 3e1bef82aa0dfee4504ad211f7e4895153e3191db6ab179f94a7e20f990a0b67</summary>
 
-- Cargo: tokio 1.53.1
+- Cargo: tokio 1.54.1
 - Cargo: tokio-util 0.7.19
 
 <pre>
@@ -11416,7 +11416,7 @@ DEALINGS IN THE SOFTWARE.
 <summary>LICENSE, LICENSE-APACHE for 129 packages · SHA-256 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76</summary>
 
 - Cargo: async-channel 2.5.0
-- Cargo: async-executor 1.14.0
+- Cargo: async-executor 1.14.1
 - Cargo: async-io 2.6.0
 - Cargo: async-lock 3.4.2
 - Cargo: async-process 2.5.0

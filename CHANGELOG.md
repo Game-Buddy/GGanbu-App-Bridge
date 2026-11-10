@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Correct pinned GitHub Action version comments and Windows-only test fixture/platform assumptions.
+- Generate fresh integration-test credentials instead of using hard-coded passwords.
+- Update Tokio and async-executor, and document a guarded exception for unused crypto-bigint arithmetic in the Ristretto255 OPAQUE suite.
+
 - Restore saved controls at startup, validate imports before atomic replacement, and refresh bundled presets after upgrades.
 - Bound pending keyboard commands and reject work after revocation, cancellation, or expiry. Cancel timed-out Wayland permission requests before sending input.
 - Bind authentication results and failures to their original pairing, and prevent concurrent application instances from overwriting security data.

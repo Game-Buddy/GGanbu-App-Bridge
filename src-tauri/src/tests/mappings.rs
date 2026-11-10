@@ -28,9 +28,8 @@ fn parses_a_single_quote_without_panicking() {
 #[test]
 fn rejects_oversized_keybinding_files_before_parsing() {
     let path = std::env::temp_dir().join(format!(
-        "gganbu-keybindings-{}-{}.blkx",
-        std::process::id(),
-        std::thread::current().name().unwrap_or("test")
+        "gganbu-keybindings-oversized-{}.blkx",
+        std::process::id()
     ));
     let oversized = vec![b' '; (MAX_KEYBINDING_FILE_BYTES + 1) as usize];
     fs::write(&path, oversized).expect("test fixture should be writable");
@@ -61,9 +60,8 @@ fn keybinding_preview_rows_are_bounded() {
 #[test]
 fn rejects_base_preset_paths_that_escape_the_preset_root() {
     let path = std::env::temp_dir().join(format!(
-        "gganbu-keybindings-unsafe-base-{}-{}.blkx",
-        std::process::id(),
-        std::thread::current().name().unwrap_or("test")
+        "gganbu-keybindings-unsafe-base-{}.blkx",
+        std::process::id()
     ));
     fs::write(
         &path,
