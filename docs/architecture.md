@@ -16,11 +16,11 @@ src-tauri/src/
 │   ├── mappings.rs        # native picker and default preset commands
 │   ├── pairing.rs         # desktop pairing lifecycle
 │   └── server.rs          # bridge server lifecycle
+├── persistence.rs         # atomic file replacement and process instance lock
 ├── mappings.rs            # preset parsing, embedded assets, import limits
 ├── actions.rs             # allowlisted action catalog and resolution
 ├── config.rs              # build-time and runtime origin configuration
 ├── tests/                 # crate-local unit tests, kept separate from production files
-│   ├── commands_server.rs # server-command lifecycle tests
 │   ├── security_*.rs      # security state, storage, and OPAQUE tests
 │   └── server.rs          # Axum transport and protocol-boundary tests
 ├── state.rs               # UI snapshot state and publication model
@@ -74,3 +74,41 @@ Browser client
 Changes that add a privileged operation should normally add a focused command
 module function, a negative test at the Rust boundary, and an update to this
 document when the trust boundary changes.
+
+## Cancellation and persistence
+
+The application holds an OS file lock on `instance.lock` before loading security
+state. It permits one process per application data directory. Security mutations
+serialize through a separate mutation mutex; disk writes finish before the in-memory
+commit, without holding the shared security lock during I/O.
+
+Server start and stop share an async lifecycle mutex. Start binds before returning.
+Stop cancels keyboard admission, clears sessions and pairing, and awaits the listener
+task. HTTP draining is limited to two seconds. Window exit awaits this same stop path.
+
+At most eight keyboard operations may be pending, including the active operation.
+Admission happens before spawning blocking work. Commands expire after 15 seconds and
+check cancellation and session validity inside the execution lock and before each
+key press. Wayland permission acquisition has the same deadline. Key releases are
+attempted even if cancellation happens after a press. The 35 ms hold is retained;
+there is no intentional delay before pressing.
+
+Controls import validates the complete catalog before atomic replacement. Saved
+controls include their source name and are restored without rewriting on startup.
+Embedded presets are extracted into `presets/<application-version>/assets`; imports
+remain separate from application-owned presets.
+
+## UI events and integration checks
+
+`get_bridge_snapshot` returns the complete bounded history. State events omit
+`actionHistory`; the UI appends a newer `lastAction`, retains at most 200 entries,
+and requests a complete snapshot when revisions skip. Revisions prevent older
+snapshots or events from replacing newer state. Pairing and session expiry are
+published once per second while the server runs. The countdown updates only its
+own component and stops at zero.
+
+Run `pnpm test:bridge` to build a loopback-only Rust protocol fixture and exercise it
+with the JavaScript OPAQUE client. The fixture stores no credentials on disk and
+uses an executor that sends no operating-system input. CI runs this check on Linux
+and Windows in addition to platform Rust tests. Real-game timing and permission
+dialog behavior still need native acceptance testing on Windows, X11 and Wayland.

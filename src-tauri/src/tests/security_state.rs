@@ -27,9 +27,9 @@ fn pairing_is_cancelled_after_five_failures() {
             .is_ok()
     );
     for _ in 0..4 {
-        assert!(state.record_pairing_failure());
+        assert!(state.record_pairing_failure("pairing"));
     }
-    assert!(!state.record_pairing_failure());
+    assert!(!state.record_pairing_failure("pairing"));
     assert!(state.pairing().is_none());
     assert!(state.pairing_code().is_none());
 }
@@ -230,7 +230,7 @@ fn temporary_session_rejects_hijacks_replays_and_expiry() {
     let now = Utc::now();
     let pairing = PairingSession::new("pairing".into(), vec![1], now + Duration::minutes(1));
     assert!(state.start_pairing(pairing).is_ok());
-    assert!(state.set_temporary_session("temporary".into(), vec![7; 64]));
+    assert!(state.set_temporary_session("pairing", "temporary".into(), vec![7; 64]));
 
     assert!(state.temporary_receive_key("stolen-id", 1).is_none());
     assert!(state.temporary_receive_key("temporary", 2).is_none());
@@ -241,7 +241,7 @@ fn temporary_session_rejects_hijacks_replays_and_expiry() {
     state.clear_pairing();
     let expired = PairingSession::new("expired".into(), vec![1], now - Duration::seconds(1));
     assert!(state.start_pairing(expired).is_ok());
-    assert!(state.set_temporary_session("expired-session".into(), vec![7; 64]));
+    assert!(!state.set_temporary_session("expired", "expired-session".into(), vec![7; 64]));
     assert!(state.temporary_receive_key("expired-session", 1).is_none());
 }
 
@@ -300,4 +300,56 @@ fn failed_persistence_does_not_mutate_memory() {
     assert!(result.is_err());
     assert!(state.devices().is_empty());
     let _ = std::fs::remove_file(root);
+}
+
+#[test]
+fn cancelled_authentication_cannot_modify_a_replacement_pairing() {
+    let state = SecurityState::default();
+    let expiry = Utc::now() + Duration::minutes(1);
+    assert!(
+        state
+            .start_pairing(PairingSession::new("old".into(), vec![1], expiry))
+            .is_ok()
+    );
+    assert!(state.set_login_state("old", vec![7]));
+    assert!(state.take_login_state("old").is_some());
+    state.clear_pairing_and_code();
+    assert!(
+        state
+            .start_pairing(PairingSession::new("new".into(), vec![2], expiry))
+            .is_ok()
+    );
+    assert!(!state.record_pairing_failure("old"));
+    assert_eq!(state.pairing().unwrap().failed_attempts, 0);
+    assert!(!state.set_login_state("old", vec![7]));
+    assert!(!state.set_temporary_session("old", "old-session".into(), vec![9; 64]));
+    assert!(state.temporary_receive_key("old-session", 1).is_none());
+    assert_eq!(state.pairing().unwrap().pairing_id, "new");
+}
+
+#[test]
+fn stopping_closes_sessions_and_pending_authentication() {
+    let state = SecurityState::default();
+    state
+        .add_device(DeviceRecord::new(
+            "device".into(),
+            "Browser".into(),
+            vec![1],
+            Utc::now(),
+        ))
+        .unwrap();
+    assert!(
+        state
+            .add_connection(ConnectionSession::new(
+                "session".into(),
+                "device".into(),
+                [1; 32],
+                Utc::now() + Duration::minutes(1)
+            ))
+            .is_ok()
+    );
+    assert!(state.begin_device_login("handshake".into(), "device".into(), vec![1]));
+    state.close_connections();
+    assert!(!state.is_session_active("session"));
+    assert!(state.take_device_login("handshake", "device").is_none());
 }

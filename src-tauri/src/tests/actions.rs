@@ -108,3 +108,28 @@ fn unknown_actions_and_unsupported_platforms_are_rejected() {
         Err(ResolveError::UnsupportedPlatform)
     );
 }
+
+#[test]
+fn invalid_controls_never_reach_persistence() {
+    let saved = std::cell::Cell::new(false);
+    let result = set_user_catalog_with_persistence(
+        r#"{"controls":{"version":5,"hotkeys":{"ID_TEST":{"keyboardKey":0}}}}"#,
+        || {
+            saved.set(true);
+            Ok(())
+        },
+    );
+    assert!(result.is_err());
+    assert!(!saved.get());
+}
+
+#[test]
+fn persistence_failure_keeps_the_current_catalog() {
+    let resolver = ActionResolver::for_current_platform();
+    let before = resolver.resolve("ID_TACTICAL_MAP").unwrap();
+    assert!(
+        set_user_catalog_with_persistence(ACTION_MAPPINGS_JSON, || Err("disk full".into()))
+            .is_err()
+    );
+    assert_eq!(resolver.resolve("ID_TACTICAL_MAP").unwrap(), before);
+}

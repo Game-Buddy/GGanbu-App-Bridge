@@ -47,3 +47,37 @@ fn pairing_transition_guard_serializes_concurrent_operations() {
         .expect("pairing transition should be released");
     drop(probe);
 }
+
+#[test]
+fn activity_events_are_small_and_full_history_remains_queryable() {
+    let bridge = SharedBridgeState::new(Vec::new());
+    let last_payload = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let capture = last_payload.clone();
+    let publisher: StatePublisher = std::sync::Arc::new(move |snapshot| {
+        *capture.lock().unwrap() = serde_json::to_vec(&snapshot).unwrap();
+    });
+    for index in 0..200 {
+        bridge.record_execute_attempt(
+            ActionAttempt {
+                action: "ID_TOGGLE_ENGINE".into(),
+                request_id: format!("request-{index}"),
+                label: Some("Toggle engine".into()),
+                platform: TargetPlatform::Linux,
+                shortcut: None,
+                validation: ActionValidation::Accepted,
+                validation_message: "Keyboard shortcut executed successfully.".into(),
+                executed: true,
+                received_at: "2026-11-10T00:00:00Z".into(),
+                sequence: 0,
+            },
+            &publisher,
+        );
+    }
+    let event_bytes = last_payload.lock().unwrap().len();
+    let snapshot = bridge.snapshot();
+    assert_eq!(snapshot.action_history.len(), 200);
+    let snapshot_bytes = serde_json::to_vec(&snapshot).unwrap().len();
+    assert!(event_bytes < 1500);
+    assert!(snapshot_bytes > event_bytes * 40);
+    println!("activity snapshot={snapshot_bytes} bytes; event={event_bytes} bytes");
+}
