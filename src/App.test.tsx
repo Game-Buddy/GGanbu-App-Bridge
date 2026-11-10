@@ -275,7 +275,11 @@ describe("GGanbu Bridge status screen", () => {
     expect(screen.getByText("fire_weapon")).toBeInTheDocument();
     expect(screen.getByText("Rejected")).toBeInTheDocument();
     expect(screen.getByText("Not resolved")).toBeInTheDocument();
-    expect(screen.getByText(/not allowlisted/)).toBeInTheDocument();
+    const statusCell = within(screen.getByRole("table"))
+      .getByText("ERR")
+      .closest("td");
+    fireEvent.focus(statusCell!);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("not allowlisted");
   });
 
   it("keeps the status view capped at ten repeated activity entries", async () => {
@@ -385,7 +389,10 @@ describe("GGanbu Bridge status screen", () => {
       if (command === "get_bridge_snapshot")
         return Promise.resolve(baseSnapshot);
       if (command === "get_host_address") return Promise.resolve("127.0.0.1");
-      if (command === "load_default_keybindings") {
+      if (
+        command === "load_default_keybindings" ||
+        command === "load_saved_keybindings"
+      ) {
         return Promise.resolve(defaultKeybindings);
       }
       if (command === "pick_keybindings_file") {
@@ -416,7 +423,10 @@ describe("GGanbu Bridge status screen", () => {
       if (command === "get_bridge_snapshot")
         return Promise.resolve(baseSnapshot);
       if (command === "get_host_address") return Promise.resolve("127.0.0.1");
-      if (command === "load_default_keybindings") {
+      if (
+        command === "load_default_keybindings" ||
+        command === "load_saved_keybindings"
+      ) {
         return Promise.resolve(defaultKeybindings);
       }
       if (command === "pick_keybindings_file") return Promise.resolve(null);
@@ -449,7 +459,10 @@ describe("GGanbu Bridge status screen", () => {
       if (command === "get_bridge_snapshot")
         return Promise.resolve(baseSnapshot);
       if (command === "get_host_address") return Promise.resolve("127.0.0.1");
-      if (command === "load_default_keybindings") {
+      if (
+        command === "load_default_keybindings" ||
+        command === "load_saved_keybindings"
+      ) {
         return Promise.resolve(defaultKeybindings);
       }
       if (command === "pick_keybindings_file")
@@ -474,5 +487,88 @@ describe("GGanbu Bridge status screen", () => {
     expect(
       screen.getByRole("button", { name: "Upload your Controls" }),
     ).not.toBeDisabled();
+  });
+  it("restores custom controls on startup and resets only on request", async () => {
+    tauri.invoke.mockImplementation(async (command: string) => {
+      if (command === "load_saved_keybindings") return customKeybindings;
+      if (command === "load_default_keybindings") return defaultKeybindings;
+      if (command === "get_host_address") return "127.0.0.1";
+      return baseSnapshot;
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(tauri.invoke).toHaveBeenCalledWith("load_saved_keybindings"),
+    );
+    expect(tauri.invoke).not.toHaveBeenCalledWith("load_default_keybindings");
+    fireEvent.click(screen.getByRole("button", { name: "Mappings" }));
+    expect(await screen.findByText("G")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+    await waitFor(() =>
+      expect(tauri.invoke).toHaveBeenCalledWith("load_default_keybindings"),
+    );
+    expect(await screen.findByText("F")).toBeInTheDocument();
+  });
+
+  it("shows a failed START request beside the server control", async () => {
+    tauri.invoke.mockImplementation(async (command: string) => {
+      if (command === "load_saved_keybindings") return defaultKeybindings;
+      if (command === "get_host_address") return "127.0.0.1";
+      if (command === "start_server") throw new Error("Disk unavailable");
+      return { ...baseSnapshot, serverStatus: "stopped" };
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(tauri.invoke).toHaveBeenCalledWith("get_bridge_snapshot"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "START" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Disk unavailable",
+    );
+    expect(screen.getByRole("button", { name: "START" })).toBeEnabled();
+  });
+
+  it("requests backend expiry cleanup once and stops the countdown", async () => {
+    tauri.invoke.mockImplementation(async (command: string) =>
+      command === "load_saved_keybindings" ? defaultKeybindings : baseSnapshot,
+    );
+    render(<App />);
+    await waitFor(() =>
+      expect(tauri.invoke).toHaveBeenCalledWith("get_bridge_snapshot"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+    vi.useFakeTimers();
+    try {
+      act(() =>
+        eventCallback?.(
+          eventFor({
+            ...baseSnapshot,
+            revision: 2,
+            activePairing: {
+              code: "12345678",
+              expiresAt: new Date(Date.now() + 1000).toISOString(),
+              failedAttempts: 0,
+            },
+          }),
+        ),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(screen.getByRole("timer")).toHaveTextContent("0:00");
+      expect(
+        tauri.invoke.mock.calls.filter(
+          ([command]) => command === "get_pairing_status",
+        ),
+      ).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      act(() =>
+        eventCallback?.(
+          eventFor({ ...baseSnapshot, revision: 3, activePairing: null }),
+        ),
+      );
+      expect(screen.getByRole("button", { name: "Add device" })).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

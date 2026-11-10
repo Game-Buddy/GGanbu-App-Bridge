@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ServerStatus } from "./bridge/types";
@@ -127,10 +127,12 @@ function StatusGauge({
   active,
   buttonLabel,
   onAction,
+  busy,
 }: {
   active: boolean;
   buttonLabel: string;
   onAction: () => void;
+  busy: boolean;
 }) {
   return (
     <div
@@ -140,7 +142,12 @@ function StatusGauge({
         <circle className="gauge-track" cx="60" cy="60" r="42" />
         <circle className="gauge-progress" cx="60" cy="60" r="42" />
       </svg>
-      <button type="button" className="gauge-start" onClick={onAction}>
+      <button
+        type="button"
+        className="gauge-start"
+        onClick={onAction}
+        disabled={busy}
+      >
         {buttonLabel}
       </button>
     </div>
@@ -165,6 +172,53 @@ function formatPairingTime(remainingSeconds: number) {
   return minutes + ":" + seconds.toString().padStart(2, "0");
 }
 
+function PairingCountdown({ expiresAt }: { expiresAt: string }) {
+  const [seconds, setSeconds] = useState(() =>
+    Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000)),
+  );
+  useEffect(() => {
+    const update = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000),
+      );
+      setSeconds(remaining);
+      if (remaining === 0) {
+        window.clearInterval(timer);
+        void invoke("get_pairing_status").catch(console.error);
+      }
+    };
+    const timer = window.setInterval(update, 1000);
+    update();
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+  return (
+    <span
+      className={
+        "pairing-timer" + (seconds === 0 ? " pairing-timer--urgent" : "")
+      }
+      role="timer"
+      aria-label={"Pairing code expires in " + formatPairingTime(seconds)}
+    >
+      <svg
+        className="pairing-timer-ring"
+        viewBox="0 0 58 58"
+        aria-hidden="true"
+      >
+        <circle className="pairing-timer-track" cx="29" cy="29" r="24" />
+        <circle
+          className="pairing-timer-progress"
+          cx="29"
+          cy="29"
+          r="24"
+          style={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - seconds / 60) }}
+        />
+      </svg>
+      <strong>{formatPairingTime(seconds)}</strong>
+    </span>
+  );
+}
+
 export default function App() {
   const snapshot = useBridgeState();
   const [hostAddress, setHostAddress] = useState("127.0.0.1");
@@ -185,36 +239,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<
     "Status" | "Activity" | "Connections" | "Mappings" | "Help" | "About"
   >("Status");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverBusy, setServerBusy] = useState(false);
   const [pairingError, setPairingError] = useState<string | null>(null);
-  const [pairingClock, setPairingClock] = useState(() => Date.now());
+
   const [keybindings, setKeybindings] = useState<KeybindingPreview | null>(
     null,
   );
   const [mappingError, setMappingError] = useState<string | null>(null);
   const [mappingBusy, setMappingBusy] = useState(false);
 
-  useEffect(() => {
-    if (!snapshot.activePairing?.expiresAt) return;
-
-    const timer = window.setInterval(() => setPairingClock(Date.now()), 250);
-    return () => window.clearInterval(timer);
-  }, [snapshot.activePairing?.expiresAt]);
-
-  const pairingSecondsRemaining = snapshot.activePairing
-    ? Math.max(
-        0,
-        Math.ceil(
-          (Date.parse(snapshot.activePairing.expiresAt) - pairingClock) / 1000,
-        ),
-      )
-    : 0;
-
-  const loadMappings = async () => {
+  const loadMappings = async (reset = true) => {
     setMappingBusy(true);
     setMappingError(null);
     try {
       setKeybindings(
-        await invoke<KeybindingPreview>("load_default_keybindings"),
+        await invoke<KeybindingPreview>(
+          reset ? "load_default_keybindings" : "load_saved_keybindings",
+        ),
       );
     } catch (error) {
       setMappingError(
@@ -226,7 +268,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => void loadMappings(), 0);
+    const loadTimer = window.setTimeout(() => void loadMappings(false), 0);
     return () => window.clearTimeout(loadTimer);
   }, []);
 
@@ -245,31 +287,38 @@ export default function App() {
         : "neutral";
 
   const handleServerAction = async () => {
+    setServerError(null);
+    setServerBusy(true);
     try {
       await invoke(isActive ? "stop_server" : "start_server");
     } catch (error) {
-      console.error("Unable to update bridge server", error);
+      setServerError(String(error));
+    } finally {
+      setServerBusy(false);
     }
   };
-  const actionHistory =
-    snapshot.actionHistory.length > 0
-      ? snapshot.actionHistory
-      : snapshot.lastAction
-        ? [snapshot.lastAction]
-        : [];
-  const activity = [...actionHistory]
-    .sort((a, b) => b.sequence - a.sequence)
-    .map(
-      (attempt) =>
-        [
-          attempt.sequence,
-          attempt.receivedAt.slice(11, 19),
-          attempt.action,
-          attempt.label ?? "Unknown action",
-          attempt.shortcut?.display ?? "—",
-          attempt.validation === "accepted" ? "OK" : "ERR",
-        ] as const,
-    );
+  const activity = useMemo(() => {
+    const actionHistory =
+      snapshot.actionHistory.length > 0
+        ? snapshot.actionHistory
+        : snapshot.lastAction
+          ? [snapshot.lastAction]
+          : [];
+    return [...actionHistory]
+      .reverse()
+      .map(
+        (attempt) =>
+          [
+            attempt.sequence,
+            attempt.receivedAt.slice(11, 19),
+            attempt.action,
+            attempt.label ?? "Unknown action",
+            attempt.shortcut?.display ?? "—",
+            attempt.validation === "accepted" ? "OK" : "ERR",
+            attempt.validationMessage,
+          ] as const,
+      );
+  }, [snapshot.actionHistory, snapshot.lastAction]);
   const visibleActivity =
     activeTab === "Status" ? activity.slice(0, 10) : activity;
   const connectedCount = snapshot.devices.filter(
@@ -618,48 +667,9 @@ export default function App() {
                       <p>Enter this code on the GGanbu.app to pair.</p>
                     </div>
                     <code>{snapshot.activePairing.code}</code>
-                    <span
-                      className={
-                        "pairing-timer" +
-                        (pairingSecondsRemaining === 0
-                          ? " pairing-timer--urgent"
-                          : "")
-                      }
-                      role="timer"
-                      aria-label={
-                        "Pairing code expires in " +
-                        formatPairingTime(pairingSecondsRemaining)
-                      }
-                    >
-                      <svg
-                        className="pairing-timer-ring"
-                        viewBox="0 0 58 58"
-                        aria-hidden="true"
-                      >
-                        <circle
-                          className="pairing-timer-track"
-                          cx="29"
-                          cy="29"
-                          r="24"
-                        />
-                        <circle
-                          className="pairing-timer-progress"
-                          cx="29"
-                          cy="29"
-                          r="24"
-                          style={{
-                            strokeDashoffset:
-                              2 *
-                              Math.PI *
-                              24 *
-                              (1 - pairingSecondsRemaining / 60),
-                          }}
-                        />
-                      </svg>{" "}
-                      <strong>
-                        {formatPairingTime(pairingSecondsRemaining)}
-                      </strong>
-                    </span>
+                    <PairingCountdown
+                      expiresAt={snapshot.activePairing.expiresAt}
+                    />
                     <button
                       type="button"
                       className="disconnect-button"
@@ -761,7 +771,15 @@ export default function App() {
                     </thead>
                     <tbody>
                       {visibleActivity.map(
-                        ([sequence, time, action, name, key, status]) => (
+                        ([
+                          sequence,
+                          time,
+                          action,
+                          name,
+                          key,
+                          status,
+                          detail,
+                        ]) => (
                           <tr key={sequence}>
                             <td>
                               <span className="row-dot" aria-hidden="true" />
@@ -770,13 +788,13 @@ export default function App() {
                             <ActivityCell value={action} />
                             <ActivityCell value={name} />
                             <ActivityCell value={key} />
-                            <td>
+                            <ActivityCell value={detail}>
                               <span
                                 className={`result result--${status === "OK" ? "ok" : "error"}`}
                               >
                                 {status}
                               </span>
-                            </td>
+                            </ActivityCell>
                           </tr>
                         ),
                       )}
@@ -805,6 +823,7 @@ export default function App() {
                   <div className="health-summary">
                     <StatusGauge
                       active={isActive}
+                      busy={serverBusy || snapshot.serverStatus === "starting"}
                       buttonLabel={buttonLabel}
                       onAction={() => void handleServerAction()}
                     />
@@ -821,11 +840,12 @@ export default function App() {
                       <dd>{displayEndpoint(snapshot.endpoint, hostAddress)}</dd>
                     </div>
                   </dl>
-                  {snapshot.serverStatus === "error" && (
+                  {(serverError || snapshot.serverStatus === "error") && (
                     <section className="error-banner" role="alert">
                       <p className="error-title">Bridge unavailable</p>
                       <p>
-                        {snapshot.serverError ??
+                        {serverError ??
+                          snapshot.serverError ??
                           "An unknown startup error occurred."}
                       </p>
                       <p className="error-help">

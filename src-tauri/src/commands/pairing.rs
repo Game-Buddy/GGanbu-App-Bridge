@@ -4,7 +4,7 @@
 use chrono::{DateTime, Duration, Utc};
 use rand::{Rng, RngCore, rngs::OsRng};
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::Manager;
 
 use crate::{
     security::{PairingSession, SecurityState},
@@ -47,35 +47,40 @@ pub(crate) fn pairing_status(security: &SecurityState) -> PairingStatusResponse 
     }
 }
 
-pub(crate) fn publish_pairing_status(app: &tauri::AppHandle, status: PairingStatusResponse) {
-    if let Err(error) = app.emit("pairing-status-changed", status) {
-        tracing::warn!(%error, "could not publish pairing status update");
-    }
-}
-
 #[tauri::command]
-pub(crate) fn start_pairing(
+pub(crate) async fn start_pairing(
     app: tauri::AppHandle,
     bridge: tauri::State<'_, SharedBridgeState>,
     security: tauri::State<'_, SecurityState>,
 ) -> Result<PairingStatusResponse, String> {
-    let mut rng = OsRng;
-    let code = format!("{:08}", rng.gen_range(0..100_000_000_u32));
-    let pairing_id = format!("{:016x}{:016x}", rng.next_u64(), rng.next_u64());
-    let expires_at = Utc::now() + Duration::minutes(1);
-    let record = security
-        .opaque()
-        .create_password_file(code.as_bytes(), pairing_id.as_bytes())
-        .map_err(|_| "unable to initialize pairing".to_owned())?;
-    let session = PairingSession::new(pairing_id, record, expires_at);
-    let _pairing_transition = bridge.pairing_transition();
-    security
-        .start_pairing_with_code(session, code)
-        .map_err(|_| "a pairing session is already active".to_owned())?;
-    let status = pairing_status(&security);
-    publish_security_snapshot(&app, &bridge, &security);
-    publish_pairing_status(&app, status.clone());
-    Ok(status)
+    let cancellation = app.state::<super::server::ServerControl>().cancellation();
+    let bridge = bridge.inner().clone();
+    let security = security.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut rng = OsRng;
+        let code = format!("{:08}", rng.gen_range(0..100_000_000_u32));
+        let pairing_id = format!("{:016x}{:016x}", rng.next_u64(), rng.next_u64());
+        let expires_at = Utc::now() + Duration::minutes(1);
+        let record = security
+            .opaque()
+            .create_password_file(code.as_bytes(), pairing_id.as_bytes())
+            .map_err(|_| "unable to initialize pairing".to_owned())?;
+        let session = PairingSession::new(pairing_id, record, expires_at);
+        let _pairing_transition = bridge.pairing_transition();
+        if cancellation.is_cancelled()
+            || bridge.snapshot().server_status != crate::state::ServerStatus::Running
+        {
+            return Err("start the bridge before pairing".to_owned());
+        }
+        security
+            .start_pairing_with_code(session, code)
+            .map_err(|_| "a pairing session is already active".to_owned())?;
+        let status = pairing_status(&security);
+        publish_security_snapshot(&app, &bridge, &security);
+        Ok(status)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -87,7 +92,6 @@ pub(crate) fn cancel_pairing(
     let _pairing_transition = bridge.pairing_transition();
     security.clear_pairing_and_code();
     publish_security_snapshot(&app, &bridge, &security);
-    publish_pairing_status(&app, pairing_status(&security));
 }
 
 #[tauri::command]
@@ -101,7 +105,6 @@ pub(crate) fn get_pairing_status(
     let status = pairing_status(&security);
     if expired {
         publish_security_snapshot(&app, &bridge, &security);
-        publish_pairing_status(&app, status.clone());
     }
     status
 }

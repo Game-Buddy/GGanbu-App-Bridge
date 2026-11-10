@@ -5,25 +5,57 @@ use std::{
     fmt,
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
 
 const KEY_HOLD_DURATION: Duration = Duration::from_millis(35);
-const PRE_EXECUTION_DELAY: Duration = Duration::from_millis(100); // TODO: Change delay
 #[cfg(target_os = "linux")]
 const WAYLAND_PORTAL_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Clone)]
+pub struct ExecutionContext {
+    deadline: Instant,
+    cancellation: tokio_util::sync::CancellationToken,
+    authorized: Arc<dyn Fn() -> bool + Send + Sync>,
+}
+
+impl ExecutionContext {
+    pub fn new(
+        cancellation: tokio_util::sync::CancellationToken,
+        authorized: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            deadline: Instant::now() + Duration::from_secs(15),
+            cancellation,
+            authorized: Arc::new(authorized),
+        }
+    }
+    pub fn check(&self) -> Result<(), ExecutionError> {
+        if self.cancellation.is_cancelled()
+            || Instant::now() >= self.deadline
+            || !(self.authorized)()
+        {
+            return Err(ExecutionError::new(
+                "keyboard command cancelled, expired, or session closed",
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub trait KeyboardExecutor: Send + Sync {
-    fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError>;
+    fn execute(&self, key_codes: &[u16], context: &ExecutionContext) -> Result<(), ExecutionError>;
 }
 
 #[derive(Clone)]
 pub struct KeyboardExecution {
     executor: Arc<dyn KeyboardExecutor>,
     execution_lock: Arc<Mutex<()>>,
+    admission: Arc<tokio::sync::Semaphore>,
+    cancellation: tokio_util::sync::CancellationToken,
 }
 
 impl fmt::Debug for KeyboardExecution {
@@ -39,6 +71,8 @@ impl KeyboardExecution {
         Self {
             executor: system_executor(),
             execution_lock: Arc::new(Mutex::new(())),
+            admission: Arc::new(tokio::sync::Semaphore::new(8)),
+            cancellation: tokio_util::sync::CancellationToken::new(),
         }
     }
 
@@ -46,6 +80,8 @@ impl KeyboardExecution {
         Self {
             executor: Arc::new(DisabledExecutor),
             execution_lock: Arc::new(Mutex::new(())),
+            admission: Arc::new(tokio::sync::Semaphore::new(8)),
+            cancellation: tokio_util::sync::CancellationToken::new(),
         }
     }
 
@@ -53,15 +89,38 @@ impl KeyboardExecution {
         Self {
             executor,
             execution_lock: Arc::new(Mutex::new(())),
+            admission: Arc::new(tokio::sync::Semaphore::new(8)),
+            cancellation: tokio_util::sync::CancellationToken::new(),
         }
     }
 
-    pub fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+    pub fn with_cancellation(mut self, cancellation: tokio_util::sync::CancellationToken) -> Self {
+        self.cancellation = cancellation;
+        self
+    }
+
+    pub fn cancellation(&self) -> tokio_util::sync::CancellationToken {
+        self.cancellation.clone()
+    }
+
+    pub fn try_admit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, ExecutionError> {
+        self.admission
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ExecutionError::new("keyboard queue is full"))
+    }
+
+    pub fn execute(
+        &self,
+        key_codes: &[u16],
+        context: &ExecutionContext,
+    ) -> Result<(), ExecutionError> {
         let _guard = self
             .execution_lock
             .lock()
             .expect("keyboard execution lock poisoned");
-        self.executor.execute(key_codes)
+        context.check()?;
+        self.executor.execute(key_codes, context)
     }
 }
 
@@ -90,7 +149,11 @@ impl std::error::Error for ExecutionError {}
 struct DisabledExecutor;
 
 impl KeyboardExecutor for DisabledExecutor {
-    fn execute(&self, _key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(
+        &self,
+        _key_codes: &[u16],
+        _context: &ExecutionContext,
+    ) -> Result<(), ExecutionError> {
         Err(ExecutionError::new("keyboard execution is disabled"))
     }
 }
@@ -120,16 +183,17 @@ struct WindowsKeyboardExecutor;
 
 #[cfg(target_os = "windows")]
 impl KeyboardExecutor for WindowsKeyboardExecutor {
-    fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(&self, key_codes: &[u16], context: &ExecutionContext) -> Result<(), ExecutionError> {
         let keys = key_codes
             .iter()
             .map(|scan_code| windows_scan_code(*scan_code))
             .collect::<Result<Vec<_>, _>>()?;
 
-        thread::sleep(PRE_EXECUTION_DELAY);
+        context.check()?;
         let mut pressed = Vec::with_capacity(keys.len());
         let press_result = (|| {
             for key in &keys {
+                context.check()?;
                 send_windows_key(*key, false)?;
                 pressed.push(*key);
             }
@@ -272,7 +336,7 @@ fn is_wayland_session() -> bool {
 
 #[cfg(target_os = "linux")]
 struct WaylandPortalKeyboardExecutor {
-    sender: Result<mpsc::Sender<WaylandKeyboardCommand>, String>,
+    sender: Result<mpsc::SyncSender<WaylandKeyboardCommand>, String>,
 }
 
 #[cfg(target_os = "linux")]
@@ -298,6 +362,7 @@ impl WaylandPortalKeyboardExecutor {
 struct WaylandKeyboardCommand {
     key_codes: Vec<u16>,
     response: mpsc::SyncSender<Result<(), ExecutionError>>,
+    context: ExecutionContext,
 }
 
 #[cfg(target_os = "linux")]
@@ -308,7 +373,7 @@ struct WaylandPortalSession {
 
 #[cfg(target_os = "linux")]
 impl KeyboardExecutor for WaylandPortalKeyboardExecutor {
-    fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(&self, key_codes: &[u16], context: &ExecutionContext) -> Result<(), ExecutionError> {
         let linux_key_codes = key_codes
             .iter()
             .map(|scan_code| direct_input_to_linux_keycode(*scan_code))
@@ -320,9 +385,10 @@ impl KeyboardExecutor for WaylandPortalKeyboardExecutor {
         })?;
         let (response_sender, response_receiver) = mpsc::sync_channel(1);
         sender
-            .send(WaylandKeyboardCommand {
+            .try_send(WaylandKeyboardCommand {
                 key_codes: linux_key_codes,
                 response: response_sender,
+                context: context.clone(),
             })
             .map_err(|_| ExecutionError::new("the Wayland portal worker stopped unexpectedly"))?;
         response_receiver
@@ -334,12 +400,12 @@ impl KeyboardExecutor for WaylandPortalKeyboardExecutor {
 }
 
 #[cfg(target_os = "linux")]
-fn start_wayland_portal_worker() -> Result<mpsc::Sender<WaylandKeyboardCommand>, String> {
+fn start_wayland_portal_worker() -> Result<mpsc::SyncSender<WaylandKeyboardCommand>, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?;
-    let (sender, receiver) = mpsc::channel::<WaylandKeyboardCommand>();
+    let (sender, receiver) = mpsc::sync_channel::<WaylandKeyboardCommand>(8);
 
     thread::Builder::new()
         .name("wayland-keyboard-portal".to_owned())
@@ -349,6 +415,7 @@ fn start_wayland_portal_worker() -> Result<mpsc::Sender<WaylandKeyboardCommand>,
                 let result = runtime.block_on(execute_through_wayland_portal(
                     &mut session,
                     &command.key_codes,
+                    &command.context,
                 ));
                 let _ = command.response.send(result);
             }
@@ -362,52 +429,17 @@ fn start_wayland_portal_worker() -> Result<mpsc::Sender<WaylandKeyboardCommand>,
 async fn execute_through_wayland_portal(
     portal_session: &mut Option<WaylandPortalSession>,
     key_codes: &[u16],
+    context: &ExecutionContext,
 ) -> Result<(), ExecutionError> {
-    use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions};
-    use ashpd::desktop::{PersistMode, Session};
-
+    context.check()?;
     if portal_session.is_none() {
-        let portal = RemoteDesktop::new().await.map_err(|error| {
-            ExecutionError::new(format!(
-                "could not connect to the Wayland Remote Desktop portal: {error}"
-            ))
-        })?;
-        let session: Session<RemoteDesktop> = portal
-            .create_session(Default::default())
-            .await
-            .map_err(|error| {
-                ExecutionError::new(format!(
-                    "could not create a Wayland Remote Desktop session: {error}"
-                ))
-            })?;
-
-        portal
-            .select_devices(
-                &session,
-                SelectDevicesOptions::default()
-                    .set_devices(enumflags2::BitFlags::from_flag(DeviceType::Keyboard))
-                    .set_persist_mode(PersistMode::Application),
-            )
-            .await
-            .and_then(|request| request.response())
-            .map_err(|error| {
-                ExecutionError::new(format!("Wayland keyboard access was not selected: {error}"))
-            })?;
-
-        let selected = portal
-            .start(&session, None, Default::default())
-            .await
-            .and_then(|request| request.response())
-            .map_err(|error| {
-                ExecutionError::new(format!("Wayland keyboard access was not granted: {error}"))
-            })?;
-        if !selected.devices().contains(DeviceType::Keyboard) {
-            return Err(ExecutionError::new(
-                "the Wayland Remote Desktop portal did not grant keyboard access",
-            ));
-        }
-
-        *portal_session = Some(WaylandPortalSession { portal, session });
+        let session = tokio::select! {
+            result = tokio::time::timeout_at(tokio::time::Instant::from_std(context.deadline), open_wayland_session()) =>
+                result.map_err(|_| ExecutionError::new("Wayland permission request expired"))??,
+            _ = context.cancellation.cancelled() => return Err(ExecutionError::new("Wayland permission request cancelled")),
+        };
+        context.check()?;
+        *portal_session = Some(session);
     }
 
     let result = send_wayland_keys(
@@ -415,6 +447,7 @@ async fn execute_through_wayland_portal(
             .as_ref()
             .expect("Wayland portal session was initialized above"),
         key_codes,
+        context,
     )
     .await;
     if result.is_err() {
@@ -424,17 +457,67 @@ async fn execute_through_wayland_portal(
 }
 
 #[cfg(target_os = "linux")]
+async fn open_wayland_session() -> Result<WaylandPortalSession, ExecutionError> {
+    use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions};
+    use ashpd::desktop::{PersistMode, Session};
+    let portal = RemoteDesktop::new().await.map_err(|error| {
+        ExecutionError::new(format!(
+            "could not connect to the Wayland Remote Desktop portal: {error}"
+        ))
+    })?;
+    let session: Session<RemoteDesktop> =
+        portal
+            .create_session(Default::default())
+            .await
+            .map_err(|error| {
+                ExecutionError::new(format!(
+                    "could not create a Wayland Remote Desktop session: {error}"
+                ))
+            })?;
+
+    portal
+        .select_devices(
+            &session,
+            SelectDevicesOptions::default()
+                .set_devices(enumflags2::BitFlags::from_flag(DeviceType::Keyboard))
+                .set_persist_mode(PersistMode::Application),
+        )
+        .await
+        .and_then(|request| request.response())
+        .map_err(|error| {
+            ExecutionError::new(format!("Wayland keyboard access was not selected: {error}"))
+        })?;
+
+    let selected = portal
+        .start(&session, None, Default::default())
+        .await
+        .and_then(|request| request.response())
+        .map_err(|error| {
+            ExecutionError::new(format!("Wayland keyboard access was not granted: {error}"))
+        })?;
+    if !selected.devices().contains(DeviceType::Keyboard) {
+        return Err(ExecutionError::new(
+            "the Wayland Remote Desktop portal did not grant keyboard access",
+        ));
+    }
+
+    Ok(WaylandPortalSession { portal, session })
+}
+
+#[cfg(target_os = "linux")]
 async fn send_wayland_keys(
     portal_session: &WaylandPortalSession,
     key_codes: &[u16],
+    context: &ExecutionContext,
 ) -> Result<(), ExecutionError> {
     use ashpd::desktop::remote_desktop::{KeyState, NotifyKeyboardKeycodeOptions};
 
-    tokio::time::sleep(PRE_EXECUTION_DELAY).await;
+    context.check()?;
 
     let mut pressed = Vec::with_capacity(key_codes.len());
     let press_result = async {
         for key_code in key_codes {
+            context.check()?;
             portal_session
                 .portal
                 .notify_keyboard_keycode(
@@ -481,7 +564,7 @@ async fn send_wayland_keys(
 
 #[cfg(target_os = "linux")]
 impl KeyboardExecutor for X11KeyboardExecutor {
-    fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(&self, key_codes: &[u16], context: &ExecutionContext) -> Result<(), ExecutionError> {
         use x11rb::{
             connection::Connection,
             protocol::{
@@ -499,8 +582,9 @@ impl KeyboardExecutor for X11KeyboardExecutor {
 
         let mut pressed = Vec::with_capacity(x11_key_codes.len());
         let press_result = (|| {
-            thread::sleep(PRE_EXECUTION_DELAY);
+            context.check()?;
             for key_code in &x11_key_codes {
+                context.check()?;
                 connection
                     .xtest_fake_input(KEY_PRESS_EVENT, *key_code, 0, 0, 0, 0, 0)
                     .map_err(|error| {
@@ -614,7 +698,11 @@ struct UnsupportedKeyboardExecutor;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl KeyboardExecutor for UnsupportedKeyboardExecutor {
-    fn execute(&self, _key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(
+        &self,
+        _key_codes: &[u16],
+        _context: &ExecutionContext,
+    ) -> Result<(), ExecutionError> {
         Err(ExecutionError::new(
             "keyboard execution is currently implemented only for Windows and Linux",
         ))

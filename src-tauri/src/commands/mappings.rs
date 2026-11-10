@@ -35,3 +35,18 @@ pub(crate) async fn load_default_keybindings(
         .await
         .map_err(|error| error.to_string())?
 }
+
+#[tauri::command]
+pub(crate) async fn load_saved_keybindings(
+    app: tauri::AppHandle,
+) -> Result<KeybindingPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        match mappings::load_saved_keybindings(&directory)? {
+            Some(preview) => Ok(preview),
+            None => mappings::load_keybindings_from_path(&app, None),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

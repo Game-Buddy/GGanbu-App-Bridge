@@ -279,11 +279,20 @@ impl fmt::Display for MappingError {
 impl std::error::Error for MappingError {}
 
 pub fn set_user_catalog(json: &str) -> Result<(), String> {
+    set_user_catalog_with_persistence(json, || Ok(()))
+}
+
+pub(crate) fn set_user_catalog_with_persistence(
+    json: &str,
+    persist: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
     let catalog = ActionCatalog::parse(json).map_err(|error| error.to_string())?;
     let storage = USER_CATALOG.get_or_init(|| RwLock::new(None));
-    *storage
+    let mut current = storage
         .write()
-        .map_err(|_| "mapping catalog lock poisoned".to_owned())? = Some(catalog);
+        .map_err(|_| "mapping catalog lock poisoned".to_owned())?;
+    persist()?;
+    *current = Some(catalog);
     Ok(())
 }
 

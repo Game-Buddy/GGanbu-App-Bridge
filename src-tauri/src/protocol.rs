@@ -120,11 +120,17 @@ pub enum ApiError {
     DuplicateRequest,
     ExecutionFailed,
     StorageUnavailable,
+    QueueFull,
 }
 
 impl ApiError {
     fn details(self) -> (StatusCode, &'static str, &'static str) {
         match self {
+            Self::QueueFull => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "queue_full",
+                "keyboard queue is full; retry with a fresh counter",
+            ),
             Self::InvalidJson => (
                 StatusCode::BAD_REQUEST,
                 "invalid_json",
@@ -403,13 +409,13 @@ fn publish_security_snapshot_locked(state: &ProtocolModule) {
         .set_security_snapshot(&state.security, &state.publisher);
 }
 
-fn pairing_authentication_failed(state: &ProtocolModule) -> ApiError {
+fn pairing_authentication_failed(state: &ProtocolModule, pairing_id: &str) -> ApiError {
     let _pairing_transition = state.bridge.pairing_transition();
-    pairing_authentication_failed_locked(state)
+    pairing_authentication_failed_locked(state, pairing_id)
 }
 
-fn pairing_authentication_failed_locked(state: &ProtocolModule) -> ApiError {
-    state.security.record_pairing_failure();
+fn pairing_authentication_failed_locked(state: &ProtocolModule, pairing_id: &str) -> ApiError {
+    state.security.record_pairing_failure(pairing_id);
     publish_security_snapshot_locked(state);
     ApiError::PairingAuthenticationFailed
 }
@@ -452,7 +458,7 @@ pub async fn pairing_auth_start(
     }
     let pairing = active_pairing(&state)?;
     let request = decode_pairing_message(&request.message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     let (response, login_state) = state
         .security
         .opaque()
@@ -461,8 +467,11 @@ pub async fn pairing_auth_start(
             &request,
             pairing.pairing_id.as_bytes(),
         )
-        .map_err(|_| pairing_authentication_failed(&state))?;
-    if !state.security.set_login_state(login_state) {
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
+    if !state
+        .security
+        .set_login_state(&pairing.pairing_id, login_state)
+    {
         return Err(ApiError::PairingUnavailable);
     }
     Ok(Json(PairingMessageResponse {
@@ -482,23 +491,23 @@ pub async fn pairing_auth_finish(
     if request.version != PROTOCOL_VERSION {
         return Err(ApiError::PairingProtocolFailed);
     }
-    active_pairing(&state)?;
+    let pairing = active_pairing(&state)?;
     let message = decode_pairing_message(&request.message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     let login_state = state
         .security
-        .take_login_state()
-        .ok_or_else(|| pairing_authentication_failed(&state))?;
+        .take_login_state(&pairing.pairing_id)
+        .ok_or_else(|| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     let key = state
         .security
         .opaque()
         .login_finish(&login_state, &message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     let mut rng = rand::rngs::OsRng;
     let session_id = format!("{:016x}{:016x}", rng.next_u64(), rng.next_u64());
     if !state
         .security
-        .set_temporary_session(session_id.clone(), key)
+        .set_temporary_session(&pairing.pairing_id, session_id.clone(), key)
     {
         return Err(ApiError::PairingUnavailable);
     }
@@ -519,14 +528,14 @@ pub async fn pairing_register_start(
     let pairing = active_pairing(&state)?;
     let session_id = envelope.session_id.clone();
     let request: PairingRegistrationStartRequest = decrypt_temporary_payload(&state, &envelope)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     if request.device_id.is_empty()
         || request.device_id.len() > 128
         || !is_valid_request_id(&request.device_id)
         || request.display_name.trim().is_empty()
         || request.display_name.chars().count() > 80
     {
-        return Err(pairing_authentication_failed(&state));
+        return Err(pairing_authentication_failed(&state, &pairing.pairing_id));
     }
     if state
         .security
@@ -534,15 +543,15 @@ pub async fn pairing_register_start(
         .iter()
         .any(|device| device.device_id == request.device_id)
     {
-        return Err(pairing_authentication_failed(&state));
+        return Err(pairing_authentication_failed(&state, &pairing.pairing_id));
     }
     let message = decode_pairing_message(&request.message)
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     let response = state
         .security
         .opaque()
         .registration_start(&message, request.device_id.as_bytes())
-        .map_err(|_| pairing_authentication_failed(&state))?;
+        .map_err(|_| pairing_authentication_failed(&state, &pairing.pairing_id))?;
     if !state.security.set_registration_state(
         &pairing.pairing_id,
         vec![1],
@@ -570,47 +579,57 @@ pub async fn pairing_register_finish(
     if !has_json_content_type(&headers) {
         return Err(ApiError::UnsupportedMediaType);
     }
-    let _pairing_transition = state.bridge.pairing_transition();
-    let pairing = active_pairing_locked(&state)?;
-    let pairing_id = pairing.pairing_id.clone();
-    let session_id = envelope.session_id.clone();
-    let request: PairingRegistrationFinishRequest = decrypt_temporary_payload(&state, &envelope)
-        .map_err(|_| pairing_authentication_failed_locked(&state))?;
-    let message = decode_pairing_message(&request.message)
-        .map_err(|_| pairing_authentication_failed_locked(&state))?;
-    let (_state, device_id, display_name) = state
-        .security
-        .take_registration_state_for(&pairing_id)
-        .ok_or_else(|| pairing_authentication_failed_locked(&state))?;
-    let password_file = state
-        .security
-        .opaque()
-        .registration_finish(&[], &message)
-        .map_err(|_| pairing_authentication_failed_locked(&state))?;
-    let now = Utc::now();
-    let persisted = state
-        .security
-        .add_device_if_pairing_matches(
-            &pairing_id,
-            crate::security::DeviceRecord::new(device_id.clone(), display_name, password_file, now),
-        )
-        .map_err(|error| {
-            tracing::error!(%error, "could not save paired device");
-            ApiError::StorageUnavailable
-        })?;
-    let response = encrypt_temporary_payload(
-        &state,
-        &session_id,
-        &PairingRegistrationFinishedResponse {
-            version: PROTOCOL_VERSION,
-            device_id,
-        },
-    )?;
-    if !persisted || !state.security.clear_pairing_if_matches(&pairing_id) {
-        return Err(ApiError::PairingUnavailable);
-    }
-    publish_security_snapshot_locked(&state);
-    Ok(Json(response))
+    tokio::task::spawn_blocking(move || {
+        let _pairing_transition = state.bridge.pairing_transition();
+        let pairing = active_pairing_locked(&state)?;
+        let pairing_id = pairing.pairing_id.clone();
+        let session_id = envelope.session_id.clone();
+        let request: PairingRegistrationFinishRequest =
+            decrypt_temporary_payload(&state, &envelope)
+                .map_err(|_| pairing_authentication_failed_locked(&state, &pairing_id))?;
+        let message = decode_pairing_message(&request.message)
+            .map_err(|_| pairing_authentication_failed_locked(&state, &pairing_id))?;
+        let (_state, device_id, display_name) = state
+            .security
+            .take_registration_state_for(&pairing_id)
+            .ok_or_else(|| pairing_authentication_failed_locked(&state, &pairing_id))?;
+        let password_file = state
+            .security
+            .opaque()
+            .registration_finish(&[], &message)
+            .map_err(|_| pairing_authentication_failed_locked(&state, &pairing_id))?;
+        let now = Utc::now();
+        let persisted = state
+            .security
+            .add_device_if_pairing_matches(
+                &pairing_id,
+                crate::security::DeviceRecord::new(
+                    device_id.clone(),
+                    display_name,
+                    password_file,
+                    now,
+                ),
+            )
+            .map_err(|error| {
+                tracing::error!(%error, "could not save paired device");
+                ApiError::StorageUnavailable
+            })?;
+        let response = encrypt_temporary_payload(
+            &state,
+            &session_id,
+            &PairingRegistrationFinishedResponse {
+                version: PROTOCOL_VERSION,
+                device_id,
+            },
+        )?;
+        if !persisted || !state.security.clear_pairing_if_matches(&pairing_id) {
+            return Err(ApiError::PairingUnavailable);
+        }
+        publish_security_snapshot_locked(&state);
+        Ok(Json(response))
+    })
+    .await
+    .map_err(|_| ApiError::StorageUnavailable)?
 }
 
 #[derive(Debug, Deserialize)]
@@ -741,14 +760,17 @@ pub async fn session_finish(
         .security
         .add_connection(session)
         .map_err(|_| ApiError::PairingAuthenticationFailed)?;
-    state
-        .security
-        .mark_device_seen(&request.device_id, Utc::now())
-        .map_err(|error| {
-            state.security.remove_connection(&session_id);
-            tracing::error!(%error, "could not save device activity");
-            ApiError::StorageUnavailable
-        })?;
+    let activity_security = state.security.clone();
+    let device_id = request.device_id.clone();
+    let saved = tokio::task::spawn_blocking(move || {
+        activity_security.mark_device_seen(&device_id, Utc::now())
+    })
+    .await
+    .map_err(|_| ApiError::StorageUnavailable)?;
+    if !matches!(saved, Ok(true)) {
+        state.security.remove_connection(&session_id);
+        return Err(ApiError::StorageUnavailable);
+    }
     publish_security_snapshot(&state);
     Ok(Json(SessionFinishResponse {
         version: PROTOCOL_VERSION,
@@ -1027,6 +1049,10 @@ pub async fn secure_command(
             return Err(api_error);
         }
     };
+    let permit = state
+        .keyboard_execution
+        .try_admit()
+        .map_err(|_| ApiError::QueueFull)?;
     if !state
         .security
         .reserve_request_id(&session_id, &command.request_id)
@@ -1035,10 +1061,18 @@ pub async fn secure_command(
     }
     let execution = state.keyboard_execution.clone();
     let key_codes = resolution.shortcut.key_codes.clone();
-    let execution_result = tokio::task::spawn_blocking(move || execution.execute(&key_codes))
-        .await
-        .map_err(|error| format!("keyboard execution task failed: {error}"))
-        .and_then(|result| result.map_err(|error| error.to_string()));
+    let security = state.security.clone();
+    let execution_session = session_id.clone();
+    let context = crate::keyboard::ExecutionContext::new(execution.cancellation(), move || {
+        security.is_session_active(&execution_session)
+    });
+    let execution_result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        execution.execute(&key_codes, &context)
+    })
+    .await
+    .map_err(|error| format!("keyboard execution task failed: {error}"))
+    .and_then(|result| result.map_err(|error| error.to_string()));
     if let Err(error) = execution_result {
         state.bridge.record_execute_attempt(
             ActionAttempt {

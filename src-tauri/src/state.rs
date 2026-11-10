@@ -70,10 +70,30 @@ pub struct BridgeSnapshot {
     pub allowed_origins: Vec<String>,
     pub last_message: Option<ReceivedMessage>,
     pub last_action: Option<ActionAttempt>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub action_history: Vec<ActionAttempt>,
     pub active_pairing: Option<PairingDisplay>,
     pub devices: Vec<DeviceSummary>,
     pub active_connection_count: usize,
+}
+
+impl BridgeSnapshot {
+    fn event_snapshot(&self) -> Self {
+        Self {
+            revision: self.revision,
+            application_status: self.application_status,
+            server_status: self.server_status,
+            endpoint: self.endpoint,
+            server_error: self.server_error.clone(),
+            allowed_origins: self.allowed_origins.clone(),
+            last_message: self.last_message.clone(),
+            last_action: self.last_action.clone(),
+            action_history: Vec::new(),
+            active_pairing: self.active_pairing.clone(),
+            devices: self.devices.clone(),
+            active_connection_count: self.active_connection_count,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -141,7 +161,7 @@ impl SharedBridgeState {
             }
             inner.snapshot.allowed_origins = allowed_origins;
             inner.snapshot.revision += 1;
-            inner.snapshot.clone()
+            inner.snapshot.event_snapshot()
         };
         publisher(snapshot);
     }
@@ -160,7 +180,7 @@ impl SharedBridgeState {
             inner.snapshot.server_status = status;
             inner.snapshot.server_error = error;
             inner.snapshot.revision += 1;
-            inner.snapshot.clone()
+            inner.snapshot.event_snapshot()
         };
         publisher(snapshot);
     }
@@ -179,7 +199,7 @@ impl SharedBridgeState {
             inner.snapshot.devices = devices;
             inner.snapshot.active_connection_count = active_connection_count;
             inner.snapshot.revision += 1;
-            inner.snapshot.clone()
+            inner.snapshot.event_snapshot()
         };
         publisher(snapshot);
     }
@@ -200,7 +220,7 @@ impl SharedBridgeState {
             inner.next_sequence += 1;
             inner.snapshot.last_message = Some(message.clone());
             inner.snapshot.revision += 1;
-            (message, inner.snapshot.clone())
+            (message, inner.snapshot.event_snapshot())
         };
         publisher(snapshot);
         message
@@ -222,7 +242,7 @@ impl SharedBridgeState {
                 inner.snapshot.action_history.remove(0);
             }
             inner.snapshot.revision += 1;
-            (attempt, inner.snapshot.clone())
+            (attempt, inner.snapshot.event_snapshot())
         };
         publisher(snapshot);
         attempt

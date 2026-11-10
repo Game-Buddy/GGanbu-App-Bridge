@@ -22,6 +22,45 @@ export const INITIAL_BRIDGE_SNAPSHOT: BridgeSnapshot = {
   activeConnectionCount: 0,
 };
 
+type SnapshotUpdate = Omit<BridgeSnapshot, "actionHistory"> & {
+  actionHistory?: BridgeSnapshot["actionHistory"];
+};
+
+export function mergeSnapshot(
+  current: BridgeSnapshot,
+  incoming: SnapshotUpdate,
+): BridgeSnapshot {
+  if (incoming.revision < current.revision) {
+    if (!incoming.actionHistory?.length) return current;
+    // A recovery response may arrive after another event; fill history without rolling back state.
+    const entries = new Map(
+      [...incoming.actionHistory, ...current.actionHistory].map((attempt) => [
+        attempt.sequence,
+        attempt,
+      ]),
+    );
+    const history = [...entries.values()]
+      .sort((a, b) => a.sequence - b.sequence)
+      .slice(-200);
+    if (
+      history.length === current.actionHistory.length &&
+      history.every(
+        (attempt, index) =>
+          attempt.sequence === current.actionHistory[index]?.sequence,
+      )
+    )
+      return current;
+    return { ...current, actionHistory: history };
+  }
+  const lastAction = incoming.lastAction;
+  const actionHistory =
+    incoming.actionHistory ??
+    (lastAction && lastAction.sequence > (current.lastAction?.sequence ?? 0)
+      ? [...current.actionHistory, lastAction].slice(-200)
+      : current.actionHistory);
+  return { ...incoming, actionHistory };
+}
+
 export function useBridgeState(): BridgeSnapshot {
   const [snapshot, setSnapshot] = useState<BridgeSnapshot>(
     INITIAL_BRIDGE_SNAPSHOT,
@@ -29,20 +68,31 @@ export function useBridgeState(): BridgeSnapshot {
 
   useEffect(() => {
     let disposed = false;
+    let lastRevision = 0;
     let unlisten: UnlistenFn | undefined;
 
-    const applySnapshot = (incoming: BridgeSnapshot) => {
+    const applySnapshot = (incoming: SnapshotUpdate) => {
       if (disposed) return;
-      setSnapshot((current) =>
-        incoming.revision >= current.revision ? incoming : current,
-      );
+      setSnapshot((current) => mergeSnapshot(current, incoming));
     };
 
     const synchronize = async () => {
       try {
-        const stopListening = await listen<BridgeSnapshot>(
+        const stopListening = await listen<SnapshotUpdate>(
           "bridge-state-changed",
-          (event) => applySnapshot(event.payload),
+          (event) => {
+            applySnapshot(event.payload);
+            // Recover missed/reordered activity events from the authoritative bounded history.
+            if (event.payload.actionHistory === undefined) {
+              const revision = event.payload.revision;
+              if (revision > lastRevision + 1) {
+                void invoke<BridgeSnapshot>("get_bridge_snapshot")
+                  .then(applySnapshot)
+                  .catch(console.error);
+              }
+            }
+            lastRevision = Math.max(lastRevision, event.payload.revision);
+          },
         );
 
         if (disposed) {
@@ -51,7 +101,9 @@ export function useBridgeState(): BridgeSnapshot {
         }
 
         unlisten = stopListening;
-        applySnapshot(await invoke<BridgeSnapshot>("get_bridge_snapshot"));
+        const initial = await invoke<BridgeSnapshot>("get_bridge_snapshot");
+        applySnapshot(initial);
+        lastRevision = Math.max(lastRevision, initial.revision);
       } catch (error) {
         if (disposed) return;
         const detail = error instanceof Error ? error.message : String(error);
