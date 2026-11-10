@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Update the Tauri AppImage bundler to fix EGL startup failures on newer Linux graphics stacks and isolate bundled GIO modules from host modules.
-- Compile Linux QA AppImages with the production origin policy so they can pair with `https://gganbu.app`.
 
 ### Changed
 
