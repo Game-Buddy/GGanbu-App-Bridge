@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-11-10
+
+### Fixed
+
+- Update the Tauri AppImage bundler to fix EGL startup failures on newer Linux graphics stacks and isolate bundled GIO modules from host modules.
+
+### Changed
+
+- Upload Linux AppImage QA artifacts for pull requests as well as pushes to `main`.
+
 ## [0.5.6] - 2026-11-10
 
 ### Fixed
