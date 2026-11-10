@@ -84,6 +84,7 @@ Release builds ignore that override and allow only `https://gganbu.app`. Never p
 ```bash
 pnpm check
 pnpm check:workflows
+pnpm test:bridge
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for branch, versioning, changelog, and pull-request requirements.

@@ -17,7 +17,7 @@ pub(crate) fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "gganbu_bridge=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "gganbu_app_bridge_lib=info,tower_http=info".into()),
         )
         .try_init()
         .ok();
@@ -38,9 +38,14 @@ pub(crate) fn run() {
             commands::server::start_server,
             commands::server::stop_server,
             commands::mappings::pick_keybindings_file,
-            commands::mappings::load_default_keybindings
+            commands::mappings::load_default_keybindings,
+            commands::mappings::load_saved_keybindings
         ])
         .setup(move |app| {
+            let directory = app.path().app_data_dir()?;
+            let instance = crate::persistence::lock_instance(&directory)
+                .map_err(|error| format!("Another bridge instance is running, or the data directory cannot be locked: {error}"))?;
+            app.manage(instance);
             let dotenv_error = if config::is_release_build() {
                 None
             } else {
@@ -116,12 +121,41 @@ pub(crate) fn run() {
             setup_bridge.set_allowed_origins(origins.values().to_vec(), &publisher);
             Ok(())
         })
-        .build(tauri::generate_context!())
-        .expect("failed to build GGanbu Bridge");
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(error) => {
+            tracing::error!(%error, "could not initialize the bridge");
+            rfd::MessageDialog::new()
+                .set_title("GGanbu Bridge unavailable")
+                .set_description(error.to_string())
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+            return;
+        }
+    };
 
     app.run(|app_handle, event| {
-        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+        if let tauri::RunEvent::ExitRequested {
+            api, code: None, ..
+        } = event
+        {
+            api.prevent_exit();
             app_handle.state::<ServerControl>().cancel();
+            let app = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = commands::server::stop_server(
+                    app.clone(),
+                    app.state::<SharedBridgeState>(),
+                    app.state::<SecurityState>(),
+                    app.state::<ServerControl>(),
+                )
+                .await
+                {
+                    tracing::warn!(%error, "bridge shutdown failed");
+                }
+                app.exit(0);
+            });
         }
     });
 }

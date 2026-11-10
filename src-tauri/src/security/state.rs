@@ -6,7 +6,7 @@ use super::{DeviceStore, OpaqueProtocol, StorageError};
 use chrono::{DateTime, Utc};
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 const MAX_TRACKED_LOGIN_FAILURES: usize = 1024;
@@ -25,6 +25,7 @@ struct Inner {
 pub struct SecurityState {
     inner: Arc<RwLock<Inner>>,
     protocol: Arc<OpaqueProtocol>,
+    mutations: Arc<Mutex<()>>,
     store: Option<Arc<DeviceStore>>,
 }
 
@@ -32,6 +33,7 @@ impl Default for SecurityState {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(Inner::default())),
+            mutations: Arc::new(Mutex::new(())),
             protocol: Arc::new(OpaqueProtocol::new()),
             store: None,
         }
@@ -53,6 +55,7 @@ impl SecurityState {
                 devices,
                 ..Inner::default()
             })),
+            mutations: Arc::new(Mutex::new(())),
             protocol: Arc::new(protocol),
             store: Some(Arc::new(store)),
         })
@@ -69,6 +72,7 @@ impl SecurityState {
                 devices,
                 ..Inner::default()
             })),
+            mutations: Arc::new(Mutex::new(())),
             protocol: Arc::new(protocol),
             store: Some(Arc::new(store)),
         })
@@ -110,13 +114,35 @@ impl SecurityState {
             .expect("security state lock poisoned")
             .pairing = None;
     }
-    pub fn add_device(&self, device: DeviceRecord) -> Result<(), StorageError> {
-        let mut inner = self.inner.write().expect("security state lock poisoned");
-        let mut devices = inner.devices.clone();
-        devices.retain(|stored| stored.device_id != device.device_id);
-        devices.push(device);
+    fn update_devices(
+        &self,
+        edit: impl FnOnce(&mut Vec<DeviceRecord>) -> bool,
+    ) -> Result<bool, StorageError> {
+        let _mutation = self
+            .mutations
+            .lock()
+            .expect("device mutation lock poisoned");
+        let mut devices = self.devices();
+        if !edit(&mut devices) {
+            return Ok(false);
+        }
         self.save_devices(&devices)?;
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        inner.connections.retain(|session| {
+            devices
+                .iter()
+                .any(|device| device.device_id == session.device_id && !device.is_revoked())
+        });
         inner.devices = devices;
+        Ok(true)
+    }
+
+    pub fn add_device(&self, device: DeviceRecord) -> Result<(), StorageError> {
+        self.update_devices(|devices| {
+            devices.retain(|stored| stored.device_id != device.device_id);
+            devices.push(device);
+            true
+        })?;
         Ok(())
     }
 
@@ -125,18 +151,16 @@ impl SecurityState {
         pairing_id: &str,
         device: DeviceRecord,
     ) -> Result<bool, StorageError> {
-        let mut inner = self.inner.write().expect("security state lock poisoned");
-        if inner.pairing.as_ref().is_none_or(|pairing| {
-            pairing.pairing_id != pairing_id || pairing.is_expired(Utc::now())
-        }) {
-            return Ok(false);
-        }
-        let mut devices = inner.devices.clone();
-        devices.retain(|stored| stored.device_id != device.device_id);
-        devices.push(device);
-        self.save_devices(&devices)?;
-        inner.devices = devices;
-        Ok(true)
+        self.update_devices(|devices| {
+            if self.pairing().is_none_or(|pairing| {
+                pairing.pairing_id != pairing_id || pairing.is_expired(Utc::now())
+            }) {
+                return false;
+            }
+            devices.retain(|stored| stored.device_id != device.device_id);
+            devices.push(device);
+            true
+        })
     }
     pub fn devices(&self) -> Vec<DeviceRecord> {
         self.inner
@@ -207,21 +231,16 @@ impl SecurityState {
 
 impl SecurityState {
     pub fn remove_device(&self, device_id: &str) -> Result<bool, StorageError> {
-        let mut inner = self.inner.write().expect("security state lock poisoned");
-        let mut devices = inner.devices.clone();
-        let Some(device) = devices
-            .iter_mut()
-            .find(|device| device.device_id == device_id)
-        else {
-            return Ok(false);
-        };
-        device.revoked_at = Some(Utc::now());
-        self.save_devices(&devices)?;
-        inner.devices = devices;
-        inner
-            .connections
-            .retain(|session| session.device_id != device_id);
-        Ok(true)
+        self.update_devices(|devices| {
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.device_id == device_id)
+            else {
+                return false;
+            };
+            device.revoked_at = Some(Utc::now());
+            true
+        })
     }
 
     pub fn rename_device(
@@ -229,18 +248,16 @@ impl SecurityState {
         device_id: &str,
         display_name: String,
     ) -> Result<bool, StorageError> {
-        let mut inner = self.inner.write().expect("security state lock poisoned");
-        let mut devices = inner.devices.clone();
-        let Some(device) = devices
-            .iter_mut()
-            .find(|device| device.device_id == device_id)
-        else {
-            return Ok(false);
-        };
-        device.display_name = display_name;
-        self.save_devices(&devices)?;
-        inner.devices = devices;
-        Ok(true)
+        self.update_devices(|devices| {
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.device_id == device_id)
+            else {
+                return false;
+            };
+            device.display_name = display_name;
+            true
+        })
     }
 }
 
@@ -293,11 +310,14 @@ impl SecurityState {
         true
     }
 
-    pub fn record_pairing_failure(&self) -> bool {
+    pub fn record_pairing_failure(&self, pairing_id: &str) -> bool {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let Some(pairing) = inner.pairing.as_mut() else {
             return false;
         };
+        if pairing.pairing_id != pairing_id {
+            return false;
+        }
         pairing.failed_attempts = pairing.failed_attempts.saturating_add(1);
         tracing::warn!(pairing_id = %pairing.pairing_id, attempts = pairing.failed_attempts, "pairing authentication failed");
         if pairing.failed_attempts >= 5 {
@@ -311,27 +331,41 @@ impl SecurityState {
     }
 }
 impl SecurityState {
-    pub fn set_login_state(&self, state: Vec<u8>) -> bool {
+    pub fn set_login_state(&self, pairing_id: &str, state: Vec<u8>) -> bool {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let Some(pairing) = inner.pairing.as_mut() else {
             return false;
         };
+        if pairing.pairing_id != pairing_id || pairing.is_expired(Utc::now()) {
+            return false;
+        }
         pairing.opaque_login_state = zeroize::Zeroizing::new(state);
         true
     }
-    pub fn take_login_state(&self) -> Option<Vec<u8>> {
+    pub fn take_login_state(&self, pairing_id: &str) -> Option<Vec<u8>> {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let pairing = inner.pairing.as_mut()?;
-        if pairing.opaque_login_state.is_empty() {
+        if pairing.pairing_id != pairing_id
+            || pairing.is_expired(Utc::now())
+            || pairing.opaque_login_state.is_empty()
+        {
             return None;
         }
         Some(std::mem::take(&mut pairing.opaque_login_state).to_vec())
     }
-    pub fn set_temporary_session(&self, session_id: String, key: Vec<u8>) -> bool {
+    pub fn set_temporary_session(
+        &self,
+        pairing_id: &str,
+        session_id: String,
+        key: Vec<u8>,
+    ) -> bool {
         let mut inner = self.inner.write().expect("security state lock poisoned");
         let Some(pairing) = inner.pairing.as_mut() else {
             return false;
         };
+        if pairing.pairing_id != pairing_id || pairing.is_expired(Utc::now()) {
+            return false;
+        }
         pairing.temporary_session_id = Some(session_id);
         pairing.temporary_session_key = Some(zeroize::Zeroizing::new(key));
         pairing.temporary_receive_counter = 0;
@@ -496,6 +530,14 @@ impl SecurityState {
             None
         }
     }
+    pub fn is_session_active(&self, session_id: &str) -> bool {
+        self.inner
+            .read()
+            .expect("security state lock poisoned")
+            .connections
+            .iter()
+            .any(|session| session.session_id == session_id && !session.is_expired(Utc::now()))
+    }
     pub fn receive_key(&self, session_id: &str, counter: u64) -> Option<[u8; 32]> {
         let inner = self.inner.read().expect("security state lock poisoned");
         let session = inner
@@ -623,19 +665,32 @@ impl SecurityState {
         device_id: &str,
         seen_at: chrono::DateTime<Utc>,
     ) -> Result<bool, StorageError> {
-        let mut inner = self.inner.write().expect("security state lock poisoned");
-        let mut devices = inner.devices.clone();
-        if let Some(device) = devices
-            .iter_mut()
-            .find(|device| device.device_id == device_id)
-        {
+        self.update_devices(|devices| {
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.device_id == device_id && !device.is_revoked())
+            else {
+                return false;
+            };
             device.last_seen_at = seen_at;
-            self.save_devices(&devices)?;
-            inner.devices = devices;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+            true
+        })
+    }
+
+    pub fn close_connections(&self) {
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        inner.connections.clear();
+        inner.pending_logins.clear();
+    }
+
+    pub fn expire_sessions(&self) {
+        let now = Utc::now();
+        self.clear_expired_pairing(now);
+        let mut inner = self.inner.write().expect("security state lock poisoned");
+        inner.connections.retain(|session| !session.is_expired(now));
+        inner
+            .pending_logins
+            .retain(|_, (_, _, expiry)| now < *expiry);
     }
 }
 

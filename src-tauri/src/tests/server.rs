@@ -33,7 +33,11 @@ struct RecordingExecutor {
 }
 
 impl KeyboardExecutor for RecordingExecutor {
-    fn execute(&self, key_codes: &[u16]) -> Result<(), ExecutionError> {
+    fn execute(
+        &self,
+        key_codes: &[u16],
+        _context: &crate::keyboard::ExecutionContext,
+    ) -> Result<(), ExecutionError> {
         self.calls.lock().unwrap().push(key_codes.to_vec());
         match self.failure {
             Some(message) => Err(ExecutionError::new(message)),
@@ -274,7 +278,7 @@ async fn stolen_temporary_session_id_cannot_register_without_key_proof() {
             .start_pairing_with_code(pairing, "12345678".into())
             .is_ok()
     );
-    assert!(security.set_temporary_session(TEST_SESSION_ID.into(), vec![9; 64]));
+    assert!(security.set_temporary_session("pairing", TEST_SESSION_ID.into(), vec![9; 64]));
     bridge.set_security_snapshot(&security, &noop_publisher());
     let router = build_router_with_execution_and_security(
         origins,
@@ -315,7 +319,7 @@ async fn expired_pairing_clears_the_published_snapshot() {
             .start_pairing_with_code(pairing, "12345678".into())
             .is_ok()
     );
-    assert!(security.set_temporary_session(TEST_SESSION_ID.into(), vec![9; 64]));
+    assert!(!security.set_temporary_session("pairing", TEST_SESSION_ID.into(), vec![9; 64]));
     let router = build_router_with_execution_and_security(
         origins,
         bridge.clone(),
@@ -917,4 +921,131 @@ async fn cancellation_completes_shutdown_and_releases_listener() {
 
     let rebound = TcpListener::bind(address).await;
     assert!(rebound.is_ok(), "listener was not released: {rebound:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn queued_action_is_cancelled_after_device_is_revoked() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct GatedExecutor {
+        calls: AtomicUsize,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        security: SecurityState,
+        observations: Mutex<Vec<bool>>,
+    }
+    impl KeyboardExecutor for GatedExecutor {
+        fn execute(
+            &self,
+            _: &[u16],
+            _context: &crate::keyboard::ExecutionContext,
+        ) -> Result<(), ExecutionError> {
+            let index = self.calls.fetch_add(1, Ordering::SeqCst);
+            if index == 0 {
+                self.release
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+            }
+            self.observations
+                .lock()
+                .unwrap()
+                .push(self.security.has_active_connection());
+            Ok(())
+        }
+    }
+    let security = active_security();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let executor = Arc::new(GatedExecutor {
+        calls: AtomicUsize::new(0),
+        release: Mutex::new(receiver),
+        security: security.clone(),
+        observations: Mutex::new(Vec::new()),
+    });
+    let origins = AllowedOrigins::parse_override(None).unwrap();
+    let bridge = SharedBridgeState::new(origins.values().to_vec());
+    let router = build_router_with_execution_and_security(
+        origins,
+        bridge.clone(),
+        noop_publisher(),
+        KeyboardExecution::with_executor(executor.clone()),
+        security.clone(),
+    );
+    let first_router = router.clone();
+    let first = tokio::spawn(async move {
+        send_execution(
+            &first_router,
+            r#"{"action":"ID_TOGGLE_ENGINE","requestId":"review-one"}"#,
+            1,
+            TEST_SESSION_KEY,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while executor.calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let second = tokio::spawn(async move {
+        send_execution(
+            &router,
+            r#"{"action":"ID_TOGGLE_ENGINE","requestId":"review-two"}"#,
+            2,
+            TEST_SESSION_KEY,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while security.receive_key(TEST_SESSION_ID, 3).is_none() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Allow the second request to reserve its ID and reach the keyboard lock.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(security.remove_device("test-device").unwrap());
+    sender.send(()).unwrap();
+    let first = first.await.unwrap();
+    let second = second.await.unwrap();
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(*executor.observations.lock().unwrap(), vec![false]);
+    assert_eq!(
+        bridge
+            .snapshot()
+            .action_history
+            .iter()
+            .filter(|a| a.executed)
+            .count(),
+        1
+    );
+    assert_eq!(first.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(second.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn full_keyboard_queue_rejects_before_reserving_the_request_id() {
+    let origins = AllowedOrigins::parse_override(None).unwrap();
+    let bridge = SharedBridgeState::new(origins.values().to_vec());
+    let execution = KeyboardExecution::with_executor(Arc::new(RecordingExecutor::default()));
+    let permits: Vec<_> = (0..8).map(|_| execution.try_admit().unwrap()).collect();
+    let router = build_router_with_execution_and_security(
+        origins,
+        bridge.clone(),
+        noop_publisher(),
+        execution,
+        active_security(),
+    );
+    let body = r#"{"action":"ID_TOGGLE_ENGINE","requestId":"busy-request"}"#;
+    let rejected = send_execution(&router, body, 1, TEST_SESSION_KEY).await;
+    assert_eq!(rejected.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(bridge.snapshot().last_action.is_none());
+    drop(permits);
+    assert_eq!(
+        send_execution(&router, body, 2, TEST_SESSION_KEY)
+            .await
+            .status(),
+        StatusCode::OK
+    );
 }

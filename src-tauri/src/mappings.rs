@@ -5,14 +5,14 @@ use std::{
     fs,
     io::Read,
     path::{Component, Path, PathBuf},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
 };
 
 use rust_embed::RustEmbed;
 use serde::Serialize;
 use tauri::Manager;
 
-use crate::actions;
+use crate::{actions, persistence::atomic_write};
 
 const DEFAULT_KEYBINDINGS: &str = "config/hotkeys/hotkey.keyboard_shooter_ver3.blkx";
 const MAX_KEYBINDING_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -24,6 +24,8 @@ const MAX_KEYBINDING_PREVIEW_ROWS: usize = 500;
 #[derive(RustEmbed)]
 #[folder = "assets/"]
 struct EmbeddedAssets;
+
+static MAPPING_IO: Mutex<()> = Mutex::new(());
 
 static ASSET_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
@@ -311,10 +313,20 @@ pub(crate) fn load_keybindings_from_path(
     app: &tauri::AppHandle,
     path: Option<PathBuf>,
 ) -> Result<KeybindingPreview, String> {
-    let embedded_root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
+    let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+    load_keybindings(&directory, &resources, path)
+}
+
+fn load_keybindings(
+    directory: &Path,
+    resources: &Path,
+    path: Option<PathBuf>,
+) -> Result<KeybindingPreview, String> {
+    let _mapping = MAPPING_IO.lock().map_err(|_| "mapping lock poisoned")?;
+    let embedded_root = directory
+        .join("presets")
+        .join(env!("CARGO_PKG_VERSION"))
         .join("assets");
     for asset in EmbeddedAssets::iter() {
         let target = embedded_root.join(asset.as_ref());
@@ -324,7 +336,7 @@ pub(crate) fn load_keybindings_from_path(
         if !target.exists()
             && let Some(contents) = EmbeddedAssets::get(asset.as_ref())
         {
-            fs::write(&target, contents.data.as_ref()).map_err(|e| e.to_string())?;
+            atomic_write(&target, contents.data.as_ref()).map_err(|e| e.to_string())?;
         }
     }
     let _ = ASSET_ROOT.set(embedded_root.clone());
@@ -338,12 +350,7 @@ pub(crate) fn load_keybindings_from_path(
             selected
         }
         None => {
-            let packaged = app
-                .path()
-                .resource_dir()
-                .map_err(|e| e.to_string())?
-                .join("assets")
-                .join(DEFAULT_KEYBINDINGS);
+            let packaged = resources.join("assets").join(DEFAULT_KEYBINDINGS);
             if packaged.exists() {
                 packaged
             } else {
@@ -355,22 +362,19 @@ pub(crate) fn load_keybindings_from_path(
     let mut seen = Vec::new();
     let mut hotkeys = serde_json::Map::new();
     load_keybinding_chain(&source, &mut files, &mut seen, &mut hotkeys)?;
-    let output = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("user-keybindings.json");
+    let output = directory.join("user-keybindings.json");
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let result =
-        serde_json::json!({"controls":{"version":5,"hotkeys":hotkeys,"basePresetPaths":{}}});
-    fs::write(
-        &output,
-        serde_json::to_vec_pretty(&result).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    actions::set_user_catalog(&serde_json::to_string(&result).map_err(|e| e.to_string())?)?;
+    let result = serde_json::json!({"source":source.display().to_string(),"controls":{"version":5,"hotkeys":hotkeys,"basePresetPaths":{}}});
+    let bytes = serde_json::to_vec_pretty(&result).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_KEYBINDING_FILE_BYTES {
+        return Err("merged controls exceed the file size limit".into());
+    }
+    actions::set_user_catalog_with_persistence(
+        std::str::from_utf8(&bytes).map_err(|e| e.to_string())?,
+        || atomic_write(&output, &bytes).map_err(|e| e.to_string()),
+    )?;
     let rows = keybinding_rows(&hotkeys);
     Ok(KeybindingPreview {
         source: source.display().to_string(),
@@ -379,6 +383,40 @@ pub(crate) fn load_keybindings_from_path(
         bindings: hotkeys.len(),
         hotkeys: rows,
     })
+}
+
+pub(crate) fn load_saved_keybindings(
+    directory: &Path,
+) -> Result<Option<KeybindingPreview>, String> {
+    let _mapping = MAPPING_IO.lock().map_err(|_| "mapping lock poisoned")?;
+    let output = directory.join("user-keybindings.json");
+    let file = match fs::File::open(&output) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut source = String::new();
+    file.take(MAX_KEYBINDING_FILE_BYTES + 1)
+        .read_to_string(&mut source)
+        .map_err(|e| e.to_string())?;
+    if source.len() as u64 > MAX_KEYBINDING_FILE_BYTES {
+        return Err("saved controls exceed the file size limit".into());
+    }
+    let document: serde_json::Value = serde_json::from_str(&source).map_err(|e| e.to_string())?;
+    actions::set_user_catalog(&source)?;
+    let hotkeys = document["controls"]["hotkeys"]
+        .as_object()
+        .ok_or("missing hotkeys")?;
+    Ok(Some(KeybindingPreview {
+        source: document["source"]
+            .as_str()
+            .unwrap_or("Saved controls")
+            .to_owned(),
+        output: output.display().to_string(),
+        files: Vec::new(),
+        bindings: hotkeys.len(),
+        hotkeys: keybinding_rows(hotkeys),
+    }))
 }
 
 #[cfg(test)]

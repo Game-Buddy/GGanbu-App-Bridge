@@ -82,3 +82,36 @@ fn rejects_base_preset_paths_that_escape_the_preset_root() {
     let error = result.expect_err("parent-directory base must be rejected");
     assert!(error.contains("unsupported basePresetPaths entry"));
 }
+
+#[test]
+fn saved_controls_restore_without_rewriting_the_file() {
+    let root = std::env::temp_dir().join(format!("gganbu-restore-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(include_str!("../../action-mappings.json")).unwrap();
+    document["source"] = serde_json::json!("my-controls.blkx");
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let saved = root.join("user-keybindings.json");
+    fs::write(&saved, &bytes).unwrap();
+    let preview = load_saved_keybindings(&root).unwrap().unwrap();
+    assert_eq!(preview.source, "my-controls.blkx");
+    assert_eq!(fs::read(&saved).unwrap(), bytes);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rejected_import_preserves_the_previous_file() {
+    let root = std::env::temp_dir().join(format!("gganbu-rejected-import-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let saved = root.join("user-keybindings.json");
+    fs::write(&saved, b"previous controls").unwrap();
+    let selected = root.join("invalid.blkx");
+    fs::write(
+        &selected,
+        r#"{"controls":{"hotkeys":{"ID_TEST":{"keyboardKey":0}}}}"#,
+    )
+    .unwrap();
+    assert!(load_keybindings(&root, &root.join("resources"), Some(selected)).is_err());
+    assert_eq!(fs::read(&saved).unwrap(), b"previous controls");
+    let _ = fs::remove_dir_all(root);
+}

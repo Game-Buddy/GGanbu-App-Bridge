@@ -14,6 +14,7 @@ pub mod state;
 mod app;
 mod commands;
 mod mappings;
+mod persistence;
 
 pub fn run() {
     app::run();

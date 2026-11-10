@@ -33,3 +33,26 @@ fn direct_input_codes_translate_to_windows_scan_codes() {
     assert!(windows_scan_code(128).is_err());
     assert!(windows_scan_code(999).is_err());
 }
+
+#[test]
+fn pending_keyboard_work_is_bounded() {
+    let execution = KeyboardExecution::disabled();
+    let permits: Vec<_> = (0..8).map(|_| execution.try_admit().unwrap()).collect();
+    assert!(execution.try_admit().is_err());
+    drop(permits);
+    assert!(execution.try_admit().is_ok());
+}
+
+#[test]
+fn cancellation_expiry_and_revocation_prevent_input() {
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let mut context = ExecutionContext::new(cancellation.clone(), || true);
+    assert!(context.check().is_ok());
+    cancellation.cancel();
+    assert!(context.check().is_err());
+    context = ExecutionContext::new(tokio_util::sync::CancellationToken::new(), || true);
+    context.deadline = Instant::now();
+    assert!(context.check().is_err());
+    let revoked = ExecutionContext::new(tokio_util::sync::CancellationToken::new(), || false);
+    assert!(revoked.check().is_err());
+}
