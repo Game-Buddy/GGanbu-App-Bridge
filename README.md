@@ -27,6 +27,8 @@ The supported platform list reflects the platforms currently built and tested by
 
 Download the AppImage and its verification files from the [latest release](https://github.com/Game-Buddy/GGanbu-App-Bridge/releases/latest). Verify the published checksum and detached signature before launching it. The complete procedure is in [release signing and verification](./docs/security/release-signing.md).
 
+For a pull-request test build, open the PR's **Checks and desktop builds** workflow run in GitHub Actions and download the `qa-linux-x86_64-<version>-<sha>` ZIP from **Artifacts** after the Linux QA job succeeds. Extract the AppImage and `SHA256SUMS` from the ZIP. These are unsigned test builds, retained for 14 days.
+
 Older AppImages can fail on newer Linux systems with `Could not create default EGL display: EGL_BAD_PARAMETER`. The bundled Wayland library conflicts with the host graphics stack. Until you install a release built with Tauri CLI 2.12 or newer, you can load the host library on Ubuntu x86_64:
 
 ```bash
